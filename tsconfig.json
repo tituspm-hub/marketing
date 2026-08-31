@@ -3,14 +3,28 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "allowJs": true,
     "checkJs": false,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
   },
-  "include": ["api/**/*.ts", "src/**/*.js", "src/**/*.jsx"]
+  "include": [
+    "api/**/*.ts",
+    "src/**/*.js",
+    "src/**/*.jsx"
+  ]
 }
