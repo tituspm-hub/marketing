@@ -4,7 +4,7 @@
 
 **Goal:** Ship a deployed, access-controlled shell of the marketing budget tracker where five named people sign in with a username and password, and admins onboard teammates from a Team page.
 
-**Architecture:** Firebase Auth backs usernames by appending a fixed synthetic domain before every SDK call. All privileged operations (creating users, changing roles, disabling accounts) run in Vercel Serverless Functions under the Firebase Admin SDK; no client may write `/users`. Two super-admin UIDs live in `src/shared/roles.js`, imported by both the browser bundle and the backend so the two copies cannot drift, and repeated in `firestore.rules`. Firestore security rules are written and tested before any UI consumes them.
+**Architecture:** Firebase Auth backs usernames by appending a fixed synthetic domain before every SDK call. All privileged operations (creating users, changing roles, disabling accounts) run in Vercel Serverless Functions under the Firebase Admin SDK; no client may write `/users`. Three super-admins are created with deterministic UIDs, listed in `src/shared/roles.js` — imported by both the browser bundle and the backend — and repeated in `firestore.rules`, with a test asserting the two lists are identical. The whole build runs against the Firebase emulators; a real project is provisioned in the final task.
 
 **Tech Stack:** React 18.3, Vite 6, Tailwind CSS v4, React Router 6, Firebase JS SDK v11 (Auth + Firestore only), Vercel Serverless Functions (Node 20, TypeScript), `firebase-admin`, Vitest, Testing Library, `@firebase/rules-unit-testing`, Firebase Emulator Suite.
 
@@ -17,9 +17,12 @@
 - Usernames: lowercase `a-z0-9._-`, 3–20 characters, must begin with a letter. Reserved and rejected: `admin`, `root`, `system`, `support`, `api`, `null`, `firebase`.
 - The UI never renders an `@` or an email address for a login identity. Labels say "Username".
 - Roles are exactly `superadmin`, `admin`, `member`. `superadmin` is assignable only by `scripts/bootstrap.mjs` — no API route may set it.
+- The three super-admins have **fixed UIDs**: `sa_yash`, `sa_titus`, `sa_gebin`. These are literals in `src/shared/roles.js` and `firestore.rules`, identical in the emulator and in production. Never generate or substitute them.
+- The team is `yash`, `titus`, `gebin` (all superadmin), `shijin`, `madesh` (members).
 - Currency is INR. All money is rendered with `Intl.NumberFormat("en-IN")` and tabular numerals.
 - No source file exceeds 250 lines. Split rather than exceed.
 - Everything runs on free tiers: Firebase **Spark** (Auth + Firestore only) and Vercel **Hobby**. No payment method anywhere. Do not enable Cloud Functions or Cloud Storage.
+- **Tasks 1–17 need no external accounts.** Development runs entirely against the Firebase Emulator Suite with project id `demo-hire3x`; Firebase treats a `demo-` prefix as offline-only, so it never contacts Google and needs no login. The real project and the Vercel deployment are Task 18.
 - Public config lives in `.env.local` (git-ignored). The service-account JSON is the one real secret: it lives only in the Vercel environment variable `FIREBASE_SERVICE_ACCOUNT` and is never committed.
 - Every task ends with a passing test run and a commit.
 
@@ -31,7 +34,7 @@
 
 | Path | Responsibility |
 | --- | --- |
-| `.env.local` / `.env.example` | Firebase web config; only the example is committed |
+| `.env.local` / `.env.example` | Firebase web config; only the example is committed. Holds emulator values until Task 18 |
 | `firebase.json` | Emulator ports and rules wiring |
 | `vercel.json` | Build output and SPA rewrites |
 | `firestore.rules` | Authorisation; the last line of defence |
@@ -68,7 +71,8 @@
 ## Spec failure-point coverage
 
 Spec §10 lists ten defects in the current implementation. This plan closes seven. The
-remaining three are listed here so they cannot be lost at a plan boundary.
+remaining three are named with the plan that owns them, so nothing is lost at a plan
+boundary.
 
 | # | Defect | Closed by |
 | --- | --- | --- |
@@ -80,7 +84,7 @@ remaining three are listed here so they cannot be lost at a plan boundary.
 | 6 | `"exp_" + Date.now()` id collisions | **Plan 2** — `crypto.randomUUID()` on create |
 | 7 | Delete with no confirmation or recovery | **Plan 3** — undo toast |
 | 8 | Unvalidated numeric amounts | Task 3 (`parseAmount`) and Task 6 (rules) |
-| 9 | No authentication | Tasks 6–17 |
+| 9 | No authentication | Tasks 6–18 |
 | 10 | Zero test coverage | Task 1, then every task after it |
 
 ---
@@ -189,7 +193,10 @@ git commit -m "chore: add Vitest harness and Firebase dependencies"
 
 ---
 
-### Task 2: Firebase project, Vercel project, and SDK wiring
+### Task 2: Emulator configuration and SDK wiring
+
+No Firebase account, no Vercel account, no console visit. This task stands the whole
+data layer up locally against the emulator suite. Task 18 swaps in the real project.
 
 **Files:**
 - Create: `.env.example`
@@ -205,39 +212,26 @@ git commit -m "chore: add Vitest harness and Firebase dependencies"
 - Consumes: nothing.
 - Produces: `readFirebaseConfig(env)` → config object, throws on missing keys. Module exports `app`, `auth`, `db`.
 
-- [ ] **Step 1: Human setup — create the Firebase project**
+- [ ] **Step 1: Create `.env.local` with emulator values**
 
-This step is performed by the user in a browser. Do not attempt to automate it.
-
-1. Go to `console.firebase.google.com` and click **Add project**. Name it `hire3x-marketing-tracker`. Google Analytics is not needed; decline it.
-2. In the left rail, open **Build → Authentication → Get started**. Select **Email/Password**, enable the first toggle only (leave "Email link" off), and save.
-3. Open **Build → Firestore Database → Create database**. Choose **Production mode**. Pick region `asia-south1` (Mumbai).
-4. **Stay on the Spark plan.** Do not upgrade, and do not enable Storage or Functions. Nothing in this project needs them.
-5. Open **Project settings** (gear icon) **→ General → Your apps → Web (`</>`)**. Register an app named `tracker`. Leave the Firebase Hosting checkbox **unticked** — hosting is Vercel's job.
-6. Copy the `firebaseConfig` object shown.
-
-- [ ] **Step 2: Record the config**
-
-Create `.env.local` from the copied values:
+These are placeholders, not credentials. The emulator accepts any well-formed config, and
+a `demo-` project id guarantees no call ever leaves the machine.
 
 ```
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=...
-VITE_FIREBASE_PROJECT_ID=...
-VITE_FIREBASE_STORAGE_BUCKET=...
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-VITE_USE_EMULATORS=false
+VITE_FIREBASE_API_KEY=demo-api-key
+VITE_FIREBASE_AUTH_DOMAIN=demo-hire3x.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=demo-hire3x
+VITE_FIREBASE_STORAGE_BUCKET=demo-hire3x.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=000000000000
+VITE_FIREBASE_APP_ID=1:000000000000:web:demo
+VITE_USE_EMULATORS=true
 ```
 
-Then link the Vercel project: run `npx vercel link` in the repo and follow the prompts.
-Add the same six `VITE_FIREBASE_*` values in the Vercel dashboard under
-**Settings → Environment Variables**, scoped to all environments. Vite inlines them at
-build time, so a value added after a deployment needs a redeploy to take effect.
+- [ ] **Step 2: Commit `.env.example` with the same keys and empty values**
 
-Commit `.env.example` with the same keys and empty values.
-
-Note: a Firebase web API key is not a secret — it identifies the project, and security rules do the actual protection. It lives in `.env.local` for configuration hygiene, not confidentiality.
+A Firebase web API key is not a secret — it identifies the project, and security rules do
+the actual protection. It lives in `.env.local` for configuration hygiene, not
+confidentiality. The service-account key in Task 18 is the one true secret.
 
 - [ ] **Step 3: Write the failing test**
 
@@ -355,10 +349,11 @@ block and no functions block.
 }
 ```
 
-`.firebaserc` — substitute the real project id:
+`.firebaserc` — the `demo-` prefix is what keeps the emulators offline. Task 18 changes
+this to the real project id.
 
 ```json
-{ "projects": { "default": "hire3x-marketing-tracker" } }
+{ "projects": { "default": "demo-hire3x" } }
 ```
 
 - [ ] **Step 8: Create `vercel.json`**
@@ -386,11 +381,18 @@ so `firebase deploy --only firestore` has something to read.
 { "indexes": [], "fieldOverrides": [] }
 ```
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 10: Confirm the emulators start**
+
+Run: `npm run emulators`
+Expected: the Auth and Firestore emulators bind to 9099 and 8080, the UI to 4000, and
+the console prints that it is running against `demo-hire3x` with no login required. Stop
+them with Ctrl-C.
+
+- [ ] **Step 11: Commit**
 
 ```bash
 git add .env.example firebase.json .firebaserc vercel.json firestore.indexes.json src/lib/firebase.js tests/firebase-config.test.js
-git commit -m "feat: wire the Firebase SDK, emulators, and Vercel project"
+git commit -m "feat: wire the Firebase SDK against the local emulator suite"
 ```
 
 ---
@@ -883,8 +885,8 @@ any UI touches Firestore. Fixes spec failure point #9.
 
 - [ ] **Step 1: Write `firestore.rules`**
 
-The `TEST-SENTINEL` comment is load-bearing: the test suite locates it to swap the real
-UIDs for test ones. Never remove it.
+The three UIDs are fixed literals, identical here, in `src/shared/roles.js`, and in the
+bootstrap script. A test in Task 7 parses this file and fails if the lists diverge.
 
 ```
 rules_version = '2';
@@ -892,10 +894,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Mirrors src/shared/roles.js. Both lists must hold the same two UIDs.
+    // Mirrors SUPER_ADMIN_UIDS in src/shared/roles.js.
+    // tests/roles.test.js parses this function and fails if the lists differ.
     function superAdmins() {
-      // TEST-SENTINEL:SUPERADMINS
-      return ['REPLACE_WITH_YASH_UID', 'REPLACE_WITH_TITUS_UID'];
+      return ['sa_yash', 'sa_titus', 'sa_gebin'];
     }
 
     function signedIn() { return request.auth != null; }
@@ -1020,31 +1022,24 @@ import { readFileSync } from "node:fs";
 import { initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { doc, setDoc } from "firebase/firestore";
 
-export const YASH = "uid_yash";
-export const TITUS = "uid_titus";
+// The real super-admin UIDs. Because they are fixed literals rather than values
+// Firebase generates, the rules can be tested against exactly the identities that
+// production uses — no substitution, nothing to drift.
+export const YASH = "sa_yash";
+export const TITUS = "sa_titus";
+export const GEBIN = "sa_gebin";
 export const ADMIN = "uid_admin";
 export const MEMBER = "uid_member";
 export const DISABLED = "uid_disabled";
 
-// Swap the production super-admin UIDs for test ones. The sentinel comment in
-// firestore.rules marks the line; if it is ever removed, loadRules() throws rather
-// than silently testing the wrong identities.
-export function loadRules() {
-  const raw = readFileSync("firestore.rules", "utf8");
-  const pattern = /\/\/ TEST-SENTINEL:SUPERADMINS\s*\n\s*return \[[^\]]*\];/;
-  if (!pattern.test(raw)) {
-    throw new Error("TEST-SENTINEL:SUPERADMINS missing from firestore.rules");
-  }
-  return raw.replace(
-    pattern,
-    `// TEST-SENTINEL:SUPERADMINS\n      return ['${YASH}', '${TITUS}'];`
-  );
-}
-
 export async function makeEnv() {
   return initializeTestEnvironment({
-    projectId: "rules-test",
-    firestore: { rules: loadRules(), host: "127.0.0.1", port: 8080 },
+    projectId: "demo-rules-test",
+    firestore: {
+      rules: readFileSync("firestore.rules", "utf8"),
+      host: "127.0.0.1",
+      port: 8080,
+    },
   });
 }
 
@@ -1060,6 +1055,7 @@ export async function seed(env) {
     const people = [
       [YASH, "yash", "superadmin", false],
       [TITUS, "titus", "superadmin", false],
+      [GEBIN, "gebin", "superadmin", false],
       [ADMIN, "adminuser", "admin", false],
       [MEMBER, "member", "member", false],
       [DISABLED, "gone", "member", true],
@@ -1094,7 +1090,7 @@ export const validExpense = (uid, over = {}) => ({
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from "vitest";
 import { assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { makeEnv, seed, as, YASH, ADMIN, MEMBER, DISABLED } from "./helpers.js";
+import { makeEnv, seed, as, YASH, TITUS, GEBIN, ADMIN, MEMBER, DISABLED } from "./helpers.js";
 
 let env;
 beforeAll(async () => { env = await makeEnv(); });
@@ -1111,8 +1107,13 @@ describe("/users is unwritable from every client", () => {
   it("blocks a super-admin too, since all role changes go through the API", async () => {
     await assertFails(updateDoc(doc(as(env, YASH, "superadmin"), `users/${MEMBER}`), { role: "admin" }));
   });
-  it("blocks anyone disabling a super-admin", async () => {
-    await assertFails(updateDoc(doc(as(env, ADMIN, "admin"), `users/${YASH}`), { disabled: true }));
+  it("blocks anyone disabling any of the three super-admins", async () => {
+    for (const target of [YASH, TITUS, GEBIN]) {
+      await assertFails(updateDoc(doc(as(env, ADMIN, "admin"), `users/${target}`), { disabled: true }));
+    }
+  });
+  it("blocks one super-admin disabling another", async () => {
+    await assertFails(updateDoc(doc(as(env, GEBIN, "superadmin"), `users/${YASH}`), { disabled: true }));
   });
   it("still allows reading the roster, which the UI needs for attribution", async () => {
     await assertSucceeds(getDoc(doc(as(env, MEMBER, "member"), `users/${ADMIN}`)));
@@ -1133,8 +1134,10 @@ describe("budgets are admin-only", () => {
   it("lets an admin set one", async () => {
     await assertSucceeds(setDoc(doc(as(env, ADMIN, "admin"), "budgets/2026-09"), budget(ADMIN)));
   });
-  it("lets a super-admin set one even with no role claim present", async () => {
-    await assertSucceeds(setDoc(doc(as(env, YASH, undefined), "budgets/2026-09"), budget(YASH)));
+  it("lets every super-admin set one even with no role claim present", async () => {
+    for (const uid of [YASH, TITUS, GEBIN]) {
+      await assertSucceeds(setDoc(doc(as(env, uid, undefined), "budgets/2026-09"), budget(uid)));
+    }
   });
   it("blocks a member", async () => {
     await assertFails(setDoc(doc(as(env, MEMBER, "member"), "budgets/2026-09"), budget(MEMBER)));
@@ -1283,8 +1286,9 @@ git commit -m "feat: add Firestore security rules with emulator-backed tests"
 ### Task 7: The shared super-admin registry
 
 One module, imported by both the browser and the backend, so the permission matrix has
-exactly one definition. This is what makes super-admin immutability real rather than
-duplicated-and-hopefully-consistent.
+exactly one definition. The drift test in Step 1 is the important part: it parses
+`firestore.rules` and asserts its `superAdmins()` list is identical to this one, so the
+two enforcement points cannot silently disagree.
 
 **Files:**
 - Create: `src/shared/roles.js`
@@ -1305,33 +1309,44 @@ duplicated-and-hopefully-consistent.
 ```js
 // tests/roles.test.js
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   SUPER_ADMIN_UIDS, isSuperAdmin, effectiveRole,
   canManageUsers, canAssignRoles, canActOn,
 } from "../src/shared/roles.js";
 
-const YASH = SUPER_ADMIN_UIDS[0];
-const TITUS = SUPER_ADMIN_UIDS[1];
+const [YASH, TITUS, GEBIN] = SUPER_ADMIN_UIDS;
 
 describe("the registry itself", () => {
-  it("holds exactly two super-admins", () => {
-    expect(SUPER_ADMIN_UIDS).toHaveLength(2);
-  });
-  it("holds no unreplaced placeholders", () => {
-    for (const uid of SUPER_ADMIN_UIDS) {
-      expect(uid).not.toMatch(/REPLACE_WITH/);
-      expect(uid.length).toBeGreaterThan(10);
-    }
+  it("holds exactly the three named super-admins", () => {
+    expect([...SUPER_ADMIN_UIDS]).toEqual(["sa_yash", "sa_titus", "sa_gebin"]);
   });
   it("cannot be mutated at runtime", () => {
     expect(() => SUPER_ADMIN_UIDS.push("uid_attacker")).toThrow();
   });
 });
 
+// The single most valuable test in this suite. Firestore rules and the JS registry are
+// two independent enforcement points; if they ever disagree, one of them is wrong and
+// the immutability guarantee has a hole. This makes divergence impossible to commit.
+describe("firestore.rules agrees with the registry", () => {
+  it("lists the identical super-admin UIDs in the same order", () => {
+    const rules = readFileSync("firestore.rules", "utf8");
+    const match = rules.match(/function superAdmins\(\)\s*\{[^}]*return\s*\[([^\]]*)\]/);
+    expect(match, "superAdmins() not found in firestore.rules").not.toBeNull();
+    const inRules = match[1]
+      .split(",")
+      .map((part) => part.trim().replace(/^['"]|['"]$/g, ""))
+      .filter(Boolean);
+    expect(inRules).toEqual([...SUPER_ADMIN_UIDS]);
+  });
+});
+
 describe("effectiveRole", () => {
-  it("returns superadmin for a listed UID no matter what the document says", () => {
+  it("returns superadmin for every listed UID no matter what the document says", () => {
     expect(effectiveRole(YASH, "member")).toBe("superadmin");
     expect(effectiveRole(TITUS, undefined)).toBe("superadmin");
+    expect(effectiveRole(GEBIN, "member")).toBe("superadmin");
   });
   it("passes through a valid stored role for anyone else", () => {
     expect(effectiveRole("uid_x", "admin")).toBe("admin");
@@ -1358,10 +1373,13 @@ describe("canActOn", () => {
   const act = (actorUid, actorRole, targetUid, targetRole) =>
     canActOn({ actorUid, actorRole, targetUid, targetRole });
 
-  it("never lets anyone act on a super-admin", () => {
-    expect(act(TITUS, "superadmin", YASH, "superadmin")).toBe(false);
-    expect(act("uid_a", "admin", YASH, "superadmin")).toBe(false);
-    expect(act("uid_m", "member", YASH, "superadmin")).toBe(false);
+  it("never lets anyone act on a super-admin, including another super-admin", () => {
+    for (const target of [YASH, TITUS, GEBIN]) {
+      expect(act(TITUS, "superadmin", target, "superadmin")).toBe(false);
+      expect(act(GEBIN, "superadmin", target, "superadmin")).toBe(false);
+      expect(act("uid_a", "admin", target, "superadmin")).toBe(false);
+      expect(act("uid_m", "member", target, "superadmin")).toBe(false);
+    }
   });
   it("lets a super-admin act on admins and members", () => {
     expect(act(YASH, "superadmin", "uid_a", "admin")).toBe(true);
@@ -1387,15 +1405,16 @@ Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `src/shared/roles.js`**
 
-Note the placeholders: Task 11 replaces them with the real UIDs, and the test above
-fails loudly until it does.
-
 ```js
 // Imported by BOTH the browser bundle and the /api backend.
-// Keep this list identical to superAdmins() in firestore.rules.
+// These UIDs are assigned explicitly by scripts/bootstrap.mjs rather than generated by
+// Firebase, so they are identical in the emulator and in production and never need
+// substituting. Keep identical to superAdmins() in firestore.rules — tests/roles.test.js
+// parses that file and fails if they differ.
 export const SUPER_ADMIN_UIDS = Object.freeze([
-  "REPLACE_WITH_YASH_UID",
-  "REPLACE_WITH_TITUS_UID",
+  "sa_yash",
+  "sa_titus",
+  "sa_gebin",
 ]);
 
 export const ROLES = Object.freeze(["superadmin", "admin", "member"]);
@@ -1430,18 +1449,14 @@ export function canActOn({ actorUid, actorRole, targetUid, targetRole }) {
 - [ ] **Step 4: Run the tests**
 
 Run: `npm test -- roles`
-Expected: the three registry assertions FAIL on the placeholders; every behavioural test
-PASSES. Leave the registry tests failing — Task 11 turns them green. Note this
-deliberately in the commit message so a reviewer is not alarmed.
+Expected: PASS, including the drift test. If the drift test fails, `firestore.rules` and
+`roles.js` disagree — fix the file that is wrong rather than relaxing the test.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/shared/roles.js tests/roles.test.js
-git commit -m "feat: add the shared super-admin registry and permission guards
-
-The three registry assertions fail until scripts/bootstrap.mjs (Task 11)
-substitutes real UIDs for the placeholders. This is intentional."
+git commit -m "feat: add the shared super-admin registry and permission guards"
 ```
 
 ---
@@ -1659,9 +1674,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { canActOn, effectiveRole, SUPER_ADMIN_UIDS } from "../src/shared/roles.js";
 
 // requireTarget's decision logic lives entirely in canActOn, so the behaviour that
-// matters is asserted without standing up the Admin SDK. Read the UID from the
-// registry rather than hardcoding one, so this keeps testing the real identities
-// after Task 11 substitutes them.
+// matters is asserted without standing up the Admin SDK. Read the UIDs from the
+// registry rather than hardcoding them, so this keeps testing the real identities if
+// the list ever changes.
 describe("the guard's decision surface", () => {
   it("refuses a target that is a super-admin, whoever asks", () => {
     const [yash, titus] = SUPER_ADMIN_UIDS;
@@ -2061,25 +2076,25 @@ git commit -m "feat: add password reset, role, disable, and password-change API 
 
 ---
 
-### Task 11: Bootstrap the two super-admins
+### Task 11: Bootstrap the three super-admins
+
+Runs against the emulator. No Firebase account, no service-account key, no console. The
+same script runs against production in Task 18 by pointing at real credentials.
 
 **Files:**
 - Create: `scripts/bootstrap.mjs`
-- Modify: `src/shared/roles.js` (substitute real UIDs)
-- Modify: `firestore.rules` (substitute real UIDs)
 
 **Interfaces:**
-- Consumes: `src/lib/username.js`, `src/lib/password.js`.
-- Produces: two Firebase Auth accounts with `superadmin` claims, their `/users`
-  documents, a seeded `/settings/app`, and the two UIDs printed for substitution.
+- Consumes: `src/lib/username.js`, `src/lib/password.js`, `src/shared/roles.js`.
+- Produces: three Auth accounts at the fixed UIDs `sa_yash`, `sa_titus`, `sa_gebin`, each
+  with a `superadmin` claim and a `/users` document, plus a seeded `/settings/app`. Prints
+  the temporary passwords.
 
-- [ ] **Step 1: Human setup — download a service-account key**
+- [ ] **Step 1: Implement `scripts/bootstrap.mjs`**
 
-In the Firebase console: **Project settings → Service accounts → Generate new private
-key**. Save it in the repo root as `serviceAccount.json`. `.gitignore` already excludes
-it. This file grants full admin access to the project — it is deleted in Step 6.
-
-- [ ] **Step 2: Implement `scripts/bootstrap.mjs`**
+The UIDs are passed to `createUser`, not read back from it. That is what lets
+`SUPER_ADMIN_UIDS` be a committed literal instead of something substituted after every
+environment change.
 
 ```js
 import { readFileSync } from "node:fs";
@@ -2088,11 +2103,22 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { toAuthEmail, validateUsername } from "../src/lib/username.js";
 import { generateTempPassword } from "../src/lib/password.js";
+import { SUPER_ADMIN_UIDS } from "../src/shared/roles.js";
 
 const SUPER_ADMINS = [
-  { username: "yash", displayName: "Yash" },
-  { username: "titus", displayName: "Titus" },
+  { uid: "sa_yash", username: "yash", displayName: "Yash" },
+  { uid: "sa_titus", username: "titus", displayName: "Titus" },
+  { uid: "sa_gebin", username: "gebin", displayName: "Gebin" },
 ];
+
+// Fail before touching anything if the script and the registry disagree.
+const declared = SUPER_ADMINS.map((p) => p.uid);
+if (JSON.stringify(declared) !== JSON.stringify([...SUPER_ADMIN_UIDS])) {
+  throw new Error(
+    `bootstrap UIDs ${declared.join(",")} do not match SUPER_ADMIN_UIDS ` +
+      `${[...SUPER_ADMIN_UIDS].join(",")}`
+  );
+}
 
 const DEFAULT_CATEGORIES = [
   { id: "meta", label: "Meta Ads", color: "sky", recurring: true },
@@ -2105,10 +2131,17 @@ const DEFAULT_CATEGORIES = [
   { id: "other", label: "Other", color: "sky", recurring: false },
 ];
 
-initializeApp({ credential: cert(JSON.parse(readFileSync("serviceAccount.json", "utf8"))) });
+// Against the emulator the SDK needs only a project id; the host env vars do the rest.
+const onEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+initializeApp(
+  onEmulator
+    ? { projectId: process.env.GCLOUD_PROJECT ?? "demo-hire3x" }
+    : { credential: cert(JSON.parse(readFileSync("serviceAccount.json", "utf8"))) }
+);
+console.log(onEmulator ? "Running against the EMULATOR" : "Running against PRODUCTION");
+
 const auth = getAuth();
 const db = getFirestore();
-
 const results = [];
 
 for (const person of SUPER_ADMINS) {
@@ -2118,30 +2151,38 @@ for (const person of SUPER_ADMINS) {
   const email = toAuthEmail(person.username);
   const tempPassword = generateTempPassword();
 
-  let user;
   try {
-    user = await auth.createUser({ email, password: tempPassword, displayName: person.displayName });
+    await auth.createUser({
+      uid: person.uid,
+      email,
+      password: tempPassword,
+      displayName: person.displayName,
+    });
   } catch (err) {
-    if (err.code !== "auth/email-already-exists") throw err;
+    if (err.code !== "auth/uid-already-exists" && err.code !== "auth/email-already-exists") {
+      throw err;
+    }
     // Idempotent: re-running repairs claims and documents without duplicating accounts.
-    user = await auth.getUserByEmail(email);
-    await auth.updateUser(user.uid, { password: tempPassword });
+    await auth.updateUser(person.uid, { password: tempPassword });
     console.log(`  (existing account for @${person.username} reused; password reset)`);
   }
 
-  await auth.setCustomUserClaims(user.uid, { role: "superadmin" });
-  await db.doc(`users/${user.uid}`).set({
-    username: person.username,
-    displayName: person.displayName,
-    role: "superadmin",
-    mustChangePassword: true,
-    disabled: false,
-    createdAt: FieldValue.serverTimestamp(),
-    createdBy: "bootstrap",
-    lastLoginAt: null,
-  }, { merge: true });
+  await auth.setCustomUserClaims(person.uid, { role: "superadmin" });
+  await db.doc(`users/${person.uid}`).set(
+    {
+      username: person.username,
+      displayName: person.displayName,
+      role: "superadmin",
+      mustChangePassword: true,
+      disabled: false,
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: "bootstrap",
+      lastLoginAt: null,
+    },
+    { merge: true }
+  );
 
-  results.push({ ...person, uid: user.uid, tempPassword });
+  results.push({ ...person, tempPassword });
 }
 
 const settings = db.doc("settings/app");
@@ -2159,57 +2200,43 @@ if (!(await settings.get()).exists) {
 
 console.log("\n=== Super-admin accounts ===");
 for (const r of results) {
-  console.log(`  @${r.username}  uid=${r.uid}  temp password: ${r.tempPassword}`);
+  console.log(`  @${r.username.padEnd(8)} uid=${r.uid.padEnd(10)} temp password: ${r.tempPassword}`);
 }
-console.log("\n=== Paste these UIDs into BOTH files ===");
-console.log(`  src/shared/roles.js  -> SUPER_ADMIN_UIDS`);
-console.log(`  firestore.rules      -> superAdmins()`);
-console.log(`  ['${results[0].uid}', '${results[1].uid}']\n`);
+console.log("\nEach must change their password on first sign-in.\n");
 process.exit(0);
 ```
 
-- [ ] **Step 3: Run it**
+- [ ] **Step 2: Add the emulator bootstrap script to `package.json`**
 
-Run: `node scripts/bootstrap.mjs`
-Expected: two accounts created, `/settings/app` seeded, two UIDs and two temporary
-passwords printed. Record the passwords — they are shown once and never stored.
+```json
+"bootstrap:emulator": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 GCLOUD_PROJECT=demo-hire3x node scripts/bootstrap.mjs"
+```
 
-- [ ] **Step 4: Substitute the UIDs in both files**
+- [ ] **Step 3: Run it against the emulator**
 
-Replace `REPLACE_WITH_YASH_UID` and `REPLACE_WITH_TITUS_UID` in **both**
-`src/shared/roles.js` and `firestore.rules` with the printed values. The two lists must
-match exactly; the registry test in Task 7 fails if a placeholder survives.
+Start the emulators in a second terminal (`npm run emulators`), then:
+
+Run: `npm run bootstrap:emulator`
+Expected: `Running against the EMULATOR`, three accounts created at the fixed UIDs,
+`/settings/app` seeded, and three temporary passwords printed. Record them — they are
+shown once and never stored.
+
+- [ ] **Step 4: Confirm nothing needs substituting**
+
+Run: `npm test -- roles`
+Expected: PASS. The registry already holds the real UIDs, so there is no placeholder step
+and no window in which the two lists disagree.
 
 - [ ] **Step 5: Run the full suite**
 
 Run: `npm test && npm run test:rules`
-Expected: PASS everywhere, including the three registry assertions from Task 7 that were
-deliberately failing.
+Expected: PASS everywhere.
 
-- [ ] **Step 6: Move the key to Vercel and delete the local copy**
-
-```bash
-base64 -i serviceAccount.json | pbcopy
-```
-
-Paste the clipboard into the Vercel dashboard as the environment variable
-`FIREBASE_SERVICE_ACCOUNT`, scoped to all environments. Then:
+- [ ] **Step 6: Commit**
 
 ```bash
-rm serviceAccount.json
-git status --short   # must not list serviceAccount.json
-```
-
-- [ ] **Step 7: Deploy the rules**
-
-Run: `npx firebase deploy --only firestore:rules,firestore:indexes`
-Expected: "Deploy complete".
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add scripts/bootstrap.mjs src/shared/roles.js firestore.rules
-git commit -m "feat: bootstrap the two immutable super-admins and seed settings"
+git add scripts/bootstrap.mjs package.json
+git commit -m "feat: bootstrap the three immutable super-admins at fixed UIDs"
 ```
 
 ---
@@ -3410,15 +3437,16 @@ git commit -m "feat: add the Team page with user creation, reset, role, and disa
 
 ---
 
-### Task 17: Local verification, team accounts, and deploy
+### Task 17: Local verification against the emulator
+
+Everything is proven locally before a single external account exists.
 
 **Files:**
 - Modify: `README.md`
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: a running local app, five real accounts with credentials to hand over, and a
-  live Vercel deployment.
+- Produces: a fully exercised local app and five working accounts in the emulator.
 
 - [ ] **Step 1: Run every check**
 
@@ -3431,80 +3459,202 @@ npm run build
 
 Expected: four clean runs. Do not proceed past a failure — record the output instead.
 
-- [ ] **Step 2: Start the app against the real project**
+- [ ] **Step 2: Start the emulators, the API, and the app**
 
-Run: `npm run dev`
+The backend routes are Vercel functions, so `vercel dev` serves them alongside Vite.
 
-Sign in as `yash` with the temporary password printed by Task 11. Expected: redirected
-to `/change-password` before anything else renders.
+```bash
+npm run emulators          # terminal 1
+npx vercel dev             # terminal 2
+```
 
-- [ ] **Step 3: Verify the gate cannot be walked around**
+`vercel dev` needs `FIREBASE_SERVICE_ACCOUNT` for the Admin SDK. Against the emulator it
+is unnecessary — add `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080` and
+`FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099` and `GCLOUD_PROJECT=demo-hire3x` to a
+`.env` file that `vercel dev` loads, and extend `api/_lib/admin.ts` to skip `cert()`
+when `FIRESTORE_EMULATOR_HOST` is set:
 
-While still holding the forced-change state, type `/team` into the address bar.
+```ts
+export function adminApp(): App {
+  if (!cached) {
+    cached =
+      getApps()[0] ??
+      (process.env.FIRESTORE_EMULATOR_HOST
+        ? initializeApp({ projectId: process.env.GCLOUD_PROJECT ?? "demo-hire3x" })
+        : initializeApp({ credential: cert(credentials()) }));
+  }
+  return cached;
+}
+```
+
+- [ ] **Step 3: Verify the forced password change cannot be walked around**
+
+Sign in as `yash` with the temporary password from Task 11.
+Expected: redirected to `/change-password` before anything else renders.
+
+Still holding that state, type `/team` into the address bar.
 Expected: bounced straight back to `/change-password`.
 
 Set a new password. Expected: landed on `/`, with **Dashboard** and **Team** in the nav.
 
-- [ ] **Step 4: Create the remaining three accounts**
+- [ ] **Step 4: Create the two members**
 
-From **Team → Add teammate**, create `titus` if the bootstrap did not, then `gebin`,
-`shijin`, and `madesh`. Use the **Generate** button for each temporary password and copy
-the handover message it produces.
+From **Team → Add teammate**, create `shijin` (Shijin) and `madesh` (Madesh) as members,
+using the **Generate** button for each temporary password.
 
-Record every credential in one place for handover:
+Record every credential in one table for handover:
 
 | Username | Name | Role | Temporary password |
 | --- | --- | --- | --- |
 | yash | Yash | Owner | *(from bootstrap)* |
 | titus | Titus | Owner | *(from bootstrap)* |
-| gebin | Gebin | Admin | *(from Generate)* |
+| gebin | Gebin | Owner | *(from bootstrap)* |
 | shijin | Shijin | Member | *(from Generate)* |
 | madesh | Madesh | Member | *(from Generate)* |
 
-- [ ] **Step 5: Verify the permission matrix by hand**
+- [ ] **Step 5: Walk the permission matrix by hand**
 
 | Check | Expected |
 | --- | --- |
 | Sign in as `madesh` | No **Team** tab in the nav |
 | Visit `/team` directly as `madesh` | Redirected to `/` |
-| As `gebin` (admin), open Team | No action buttons on Yash's or Titus's rows |
-| As `gebin`, try to make someone an admin | No "Make admin" button is rendered |
-| As `yash`, promote `gebin` to admin | Succeeds; `gebin`'s next page load reflects it |
-| Switch off `madesh`, then reload his session | Signed out immediately |
+| As `gebin`, open Team | No action buttons on Yash's or Titus's rows |
+| As `gebin`, promote `shijin` to admin | Succeeds — super-admins may assign roles |
+| Sign in as `shijin` (now admin), open Team | No action buttons on any of the three owners |
+| As `shijin` (admin), try to promote `madesh` | No "Make admin" button is rendered |
+| As `gebin`, switch off `madesh` while he is signed in | His session signs out within seconds |
+| As `gebin`, demote `shijin` back to member | Succeeds; her Team tab disappears on reload |
 
-- [ ] **Step 6: Confirm the service-account key is not in the repository**
+- [ ] **Step 6: Update `README.md`**
+
+Replace the Vercel-and-localStorage instructions with: local setup, the emulator and
+`vercel dev` commands, the four verification commands, the environment variables, and a
+note that `scripts/bootstrap.mjs` runs once per environment.
+
+- [ ] **Step 7: Commit and push**
+
+```bash
+git branch --show-current   # must print gebin-Dev
+git add README.md api/_lib/admin.ts
+git commit -m "docs: document local setup, emulators, and verification"
+git push
+```
+
+---
+
+### Task 18: Provision production and deploy
+
+The only task that touches an external account. Configuration only — no code changes
+beyond `.env.local` and `.firebaserc`.
+
+**Files:**
+- Modify: `.env.local`
+- Modify: `.firebaserc`
+
+**Interfaces:**
+- Consumes: a working, fully tested application.
+- Produces: a live deployment with the same five accounts.
+
+- [ ] **Step 1: Human setup — create the Firebase project**
+
+Performed by the user in a browser. Do not attempt to automate it.
+
+1. Go to `console.firebase.google.com`, click **Add project**, name it
+   `hire3x-marketing-tracker`. Decline Google Analytics.
+2. **Build → Authentication → Get started**. Select **Email/Password**, enable the first
+   toggle only (leave "Email link" off), save.
+3. **Build → Firestore Database → Create database**. Choose **Production mode**, region
+   `asia-south1` (Mumbai).
+4. **Stay on the Spark plan.** Do not upgrade. Do not enable Storage or Functions.
+5. **Project settings → General → Your apps → Web (`</>`)**. Register an app named
+   `tracker`. Leave the Firebase Hosting checkbox **unticked**.
+6. Copy the `firebaseConfig` object.
+7. **Project settings → Service accounts → Generate new private key**. Save it in the
+   repo root as `serviceAccount.json`. `.gitignore` already excludes it.
+
+- [ ] **Step 2: Point the local config at production**
+
+Replace the six values in `.env.local` with the real ones and set
+`VITE_USE_EMULATORS=false`. Change `.firebaserc` to the real project id:
+
+```json
+{ "projects": { "default": "hire3x-marketing-tracker" } }
+```
+
+- [ ] **Step 3: Deploy the security rules before anything can write**
+
+Run: `npx firebase deploy --only firestore:rules,firestore:indexes`
+Expected: "Deploy complete". Rules must land before the first write, or Firestore's
+default deny-all blocks the bootstrap.
+
+- [ ] **Step 4: Bootstrap production**
+
+Run: `node scripts/bootstrap.mjs`
+Expected: `Running against PRODUCTION`, three accounts at `sa_yash`, `sa_titus`,
+`sa_gebin`, and three temporary passwords. Record them.
+
+- [ ] **Step 5: Move the key to Vercel and delete the local copy**
+
+```bash
+npx vercel link
+base64 -i serviceAccount.json | pbcopy
+```
+
+In the Vercel dashboard under **Settings → Environment Variables**, scoped to all
+environments, add:
+
+- `FIREBASE_SERVICE_ACCOUNT` — paste the clipboard
+- the six `VITE_FIREBASE_*` values
+
+Vite inlines the `VITE_*` values at build time, so any added after a deployment need a
+redeploy to take effect. Then:
+
+```bash
+rm serviceAccount.json
+git status --short   # must not list serviceAccount.json
+```
+
+- [ ] **Step 6: Confirm the key never entered git history**
 
 ```bash
 git log --all --diff-filter=A --name-only | grep -i serviceaccount && echo "LEAKED" || echo "clean"
 ```
 
-Expected: `clean`. If it prints `LEAKED`, rotate the key in the Firebase console before
-going further.
+Expected: `clean`. If it prints `LEAKED`, rotate the key in the Firebase console
+immediately before continuing.
 
 - [ ] **Step 7: Deploy**
-
-Confirm the six `VITE_FIREBASE_*` values and `FIREBASE_SERVICE_ACCOUNT` are set in the
-Vercel dashboard, then:
 
 ```bash
 npx vercel --prod
 ```
 
-Open the printed URL. Sign in. Expected: identical behaviour to local, and
-`/api/users/create` returning JSON rather than HTML — if it returns HTML, the
-`vercel.json` rewrite is missing its `(?!api/)` exclusion.
+Open the printed URL and sign in as `yash`.
 
-- [ ] **Step 8: Update `README.md`**
+Expected: identical behaviour to local. Confirm `/api/users/create` returns JSON rather
+than HTML — if it returns HTML, `vercel.json` is missing the `(?!api/)` exclusion and the
+SPA fallback is swallowing the route.
 
-Replace the Vercel-and-localStorage instructions with: local setup, the emulator
-commands, the three test commands, the environment variables, and a note that
-`scripts/bootstrap.mjs` is run once per project and never again.
+- [ ] **Step 8: Re-create the two members in production**
 
-- [ ] **Step 9: Commit and push**
+The emulator accounts do not carry over. From **Team → Add teammate**, create `shijin`
+and `madesh` again, and record the new temporary passwords.
+
+- [ ] **Step 9: Re-run the permission matrix from Task 17, Step 5 against production**
+
+Expected: every row behaves identically. A difference here means the deployed rules and
+the local ones disagree — redeploy the rules.
+
+- [ ] **Step 10: Hand over the credentials**
+
+Produce the filled table of five usernames and temporary passwords, and send each person
+only their own row.
+
+- [ ] **Step 11: Commit and push**
 
 ```bash
 git branch --show-current   # must print gebin-Dev
-git add README.md
-git commit -m "docs: document local setup, emulators, and deployment"
+git add .firebaserc
+git commit -m "chore: point the project at the production Firebase environment"
 git push
 ```
