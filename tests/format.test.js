@@ -24,6 +24,16 @@ describe("fmtDate", () => {
     expect(fmtDate("2026-13-45")).toBe("—");
   });
   it("formats the same date regardless of the machine's timezone", () => {
+    // Carried note (Task 4): this loop mutates process.env.TZ mid-process and relies
+    // on the running Node build re-reading TZ per Date/Intl call rather than caching
+    // it at startup. That is true on the Node version this suite currently runs on,
+    // but it is not a documented cross-version guarantee — a future Node upgrade
+    // could stop honouring a mid-process TZ mutation, which would make this loop
+    // exercise only one (real) timezone on every iteration and pass vacuously even
+    // against a broken, timezone-dependent fmtDate. The loop exists specifically to
+    // catch that class of regression, so if it ever starts passing suspiciously fast
+    // or the values stop varying, treat that as a signal to re-verify the mechanism,
+    // not proof the implementation is still timezone-safe.
     const original = process.env.TZ;
     for (const tz of ["UTC", "Asia/Kolkata", "America/Los_Angeles", "Pacific/Kiritimati"]) {
       process.env.TZ = tz;
