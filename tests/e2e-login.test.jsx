@@ -5,17 +5,15 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const AUTH_EMULATOR = "http://127.0.0.1:9099";
-let reachable = false;
-try {
-  reachable = (await fetch(AUTH_EMULATOR, { signal: AbortSignal.timeout(2000) })).ok;
-} catch { reachable = false; }
-const maybe = reachable ? describe : describe.skip;
+import { emulatorReachable, seedOwner, TEST_PASSWORD } from "./support/emulator.js";
+const maybe = (await emulatorReachable()) ? describe : describe.skip;
 
 maybe("the sign-in journey a person actually walks", () => {
   let App, auth, signOut;
 
   beforeAll(async () => {
+    // Forced-change on, so the destination after sign-in is deterministic.
+    await seedOwner({ uid: "sa_titus", mustChangePassword: true });
     ({ auth } = await import("../src/lib/firebase.js"));
     ({ signOut } = await import("firebase/auth"));
     ({ default: App } = await import("../src/App.jsx"));
@@ -32,18 +30,13 @@ maybe("the sign-in journey a person actually walks", () => {
   }
 
   it("leaves the sign-in screen once the credentials are accepted", async () => {
-    await signIn("gebin", "asdfghjkl;'");
+    await signIn("titus", TEST_PASSWORD);
     // Which screen comes next depends on whether the forced-change flag is still set,
     // which another suite may have cleared. The invariant under test is only that the
     // form does not sit there doing nothing, so assert on leaving it.
     // Wait for a destination, not for the button to vanish: the loading screen also
     // removes the button, so that alone would pass while still going nowhere.
-    await waitFor(() => {
-      const arrived =
-        screen.queryByRole("heading", { name: /set your own password/i }) ??
-        screen.queryByRole("heading", { name: /marketing budget/i });
-      expect(arrived).not.toBeNull();
-    }, { timeout: 20000 });
+    await screen.findByRole("heading", { name: /set your own password/i }, { timeout: 20000 });
 
     expect(screen.queryByRole("button", { name: /^sign in$/i })).toBeNull();
   }, 30000);
@@ -70,7 +63,7 @@ maybe("the sign-in journey a person actually walks", () => {
   it("names the empty field rather than failing silently", async () => {
     render(<App />);
     await screen.findByLabelText(/username/i, {}, { timeout: 8000 });
-    await userEvent.type(screen.getByLabelText(/username/i), "gebin");
+    await userEvent.type(screen.getByLabelText(/username/i), "titus");
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
     const alert = await screen.findByRole("alert", {}, { timeout: 5000 });
     expect(alert.textContent).toMatch(/password/i);

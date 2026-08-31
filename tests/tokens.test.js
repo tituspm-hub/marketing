@@ -52,9 +52,9 @@ describe("design tokens", () => {
   });
 
   it("keeps the shadcn semantic colours on the Hire3x palette", () => {
-    expect(resolve("--color-border").toUpperCase()).toBe("#E8EAEE");
-    expect(resolve("--color-muted-foreground").toUpperCase()).toBe("#6B7280");
-    expect(resolve("--color-foreground").toUpperCase()).toBe("#0A0A0B");
+    expect(resolve("--color-border").toUpperCase()).toBe("#E7EBF3");
+    expect(resolve("--color-muted-foreground").toUpperCase()).toBe("#64748B");
+    expect(resolve("--color-foreground").toUpperCase()).toBe("#0B1220");
     expect(resolve("--color-destructive").toUpperCase()).toBe("#DC2626");
   });
 
@@ -78,6 +78,12 @@ describe("design tokens", () => {
     const tailwindAt = css.indexOf('@import "tailwindcss"');
     expect(fontAt).toBeGreaterThan(-1);
     expect(fontAt).toBeLessThan(tailwindAt);
+  });
+
+  it("carries a distinct accent per category slot", () => {
+    const ramp = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => resolve(`--color-cat-${n}`));
+    expect(ramp.every(Boolean)).toBe(true);
+    expect(new Set(ramp.map((c) => c.toUpperCase())).size).toBe(ramp.length);
   });
 
   it("enforces the 44px minimum touch target", () => {

@@ -4,7 +4,7 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { toAuthEmail, validateUsername } from "../src/lib/username.js";
 import { generateTempPassword } from "../src/lib/password.js";
-import { SUPER_ADMIN_UIDS } from "../src/shared/roles.js";
+import { SUPER_ADMIN_UIDS, isHiddenAccount } from "../src/shared/roles.js";
 
 const SUPER_ADMINS = [
   { uid: "sa_yash", username: "yash", displayName: "Yash" },
@@ -114,8 +114,9 @@ for (const person of SUPER_ADMINS) {
     disabled: false,
   };
   // createdAt and mustChangePassword belong to the account's first life only; a repair
-  // run that rewrote them would relock three working accounts.
-  if (isNew || resetPasswords) profile.mustChangePassword = true;
+  // run that rewrote them would relock three working accounts. A hidden owner account
+  // is set up by hand rather than handed a temporary password, so it is never flagged.
+  if ((isNew || resetPasswords) && !isHiddenAccount(person.uid)) profile.mustChangePassword = true;
   if (isNew) {
     profile.createdAt = FieldValue.serverTimestamp();
     profile.createdBy = "bootstrap";

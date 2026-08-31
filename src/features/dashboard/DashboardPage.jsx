@@ -1,15 +1,23 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { doc, deleteDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { toast } from "sonner";
+import { Wallet, TrendingUp, PiggyBank, Plus, Download, Printer, Upload } from "lucide-react";
 import { db } from "../../lib/firebase.js";
-import { inr, fmtDate, parseAmount } from "../../lib/format.js";
+import { inr, parseAmount } from "../../lib/format.js";
 import { monthsInPeriod, findMonth, monthKey, defaultDateFor } from "../../lib/period.js";
 import { useAuth } from "../../auth/AuthProvider.jsx";
 import { useSettings } from "../settings/useSettings.js";
 import { useExpenses } from "../expenses/useExpenses.js";
 import { useBudgets } from "../expenses/useBudgets.js";
 import ExpenseForm from "../expenses/ExpenseForm.jsx";
+import ExpenseLedger from "../expenses/ExpenseLedger.jsx";
+import ImportDialog from "../expenses/ImportDialog.jsx";
+import MonthRail from "./MonthRail.jsx";
+import StatCard from "./StatCard.jsx";
+import CategoryBreakdown from "./CategoryBreakdown.jsx";
+import Tour from "../../components/Tour.jsx";
 import FullScreenLoader from "../../components/FullScreenLoader.jsx";
+import { toCsv, download, reportHtml } from "../reports/exportData.js";
 
 export default function DashboardPage() {
   const { user, isAdmin } = useAuth();
@@ -23,34 +31,41 @@ export default function DashboardPage() {
   );
   const [activeMonth, setActiveMonth] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [view, setView] = useState("ledger");
 
   const current = activeMonth ?? monthKey(defaultDateFor(settings.periodStart, settings.periodEnd));
 
-  const monthExpenses = useMemo(
-    () => expenses.filter((e) => e.month === current),
-    [expenses, current]
-  );
+  const monthExpenses = useMemo(() => expenses.filter((e) => e.month === current), [expenses, current]);
   const spent = monthExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   const budget = Number(budgets[current] || 0);
   const remaining = budget - spent;
-  const utilisation = budget ? Math.round((spent / budget) * 100) : null;
+  const used = budget ? Math.round((spent / budget) * 100) : null;
 
   const byCategory = useMemo(() => {
     const map = new Map();
-    for (const e of monthExpenses) {
-      map.set(e.category, (map.get(e.category) ?? 0) + Number(e.amount || 0));
-    }
+    for (const e of monthExpenses) map.set(e.category, (map.get(e.category) ?? 0) + Number(e.amount || 0));
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }, [monthExpenses]);
 
-  const totalsByMonth = useMemo(() => {
+  const totals = useMemo(() => {
     const map = Object.fromEntries(months.map((m) => [m.key, 0]));
     for (const e of expenses) if (map[e.month] !== undefined) map[e.month] += Number(e.amount || 0);
     return map;
   }, [expenses, months]);
 
-  const grandSpent = Object.values(totalsByMonth).reduce((s, v) => s + v, 0);
-  const grandBudget = months.reduce((s, m) => s + Number(budgets[m.key] || 0), 0);
+  // Press n anywhere to start a new expense, the one action logged many times a day.
+  useEffect(() => {
+    function onKey(event) {
+      const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+      if (event.key === "n" && !inField && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        document.getElementById("description")?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (settingsLoading || expensesLoading) return <FullScreenLoader label="Loading the tracker…" />;
   if (error) return <p role="alert" className="text-danger">{error}</p>;
@@ -68,176 +83,127 @@ export default function DashboardPage() {
     }
   }
 
+  function exportCsv() {
+    download(`marketing-spend-${current}.csv`, toCsv(monthExpenses));
+    toast.success(`Exported ${monthExpenses.length} expenses`);
+  }
+
+  function printReport() {
+    const html = reportHtml({ label, expenses: monthExpenses, budget, spent, byCategory, months, totals, budgets });
+    const frame = document.createElement("iframe");
+    frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(frame);
+    frame.contentDocument.write(html);
+    frame.contentDocument.close();
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => frame.remove(), 1000);
+  }
+
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-extrabold leading-tight">Marketing budget</h1>
-        <p className="text-muted-foreground text-sm">
-          {months[0]?.full} – {months.at(-1)?.full} · {expenses.length} expenses recorded
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[10px] font-bold tracking-[0.14em] text-primary">
+            {months[0]?.full.toUpperCase()} — {months.at(-1)?.full.toUpperCase()}
+          </p>
+          <h1 className="text-[32px] leading-[1.1] font-extrabold tracking-tight mt-1">
+            Marketing budget
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {expenses.length} {expenses.length === 1 ? "expense" : "expenses"} across the period ·{" "}
+            <span className="tabular font-semibold text-ink">
+              {inr(Object.values(totals).reduce((s, v) => s + v, 0))}
+            </span>{" "}
+            committed
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2" data-tour="actions">
+          <GhostButton onClick={() => setImporting(true)} icon={Upload}>Import</GhostButton>
+          <GhostButton onClick={exportCsv} icon={Download}>Export CSV</GhostButton>
+          <GhostButton onClick={printReport} icon={Printer}>Report</GhostButton>
+          <button
+            onClick={() => document.getElementById("description")?.focus()}
+            className="inline-flex items-center gap-2 rounded-full bg-primary text-white font-semibold px-5 hover:bg-primary-hover transition-colors shadow-lift"
+          >
+            <Plus className="size-4" />
+            New expense
+          </button>
+        </div>
       </header>
 
-      <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Month">
-        {months.map((m) => (
-          <button key={m.key} onClick={() => setActiveMonth(m.key)} data-compact
-            aria-current={m.key === current ? "true" : undefined}
-            className={`shrink-0 px-4 py-2 rounded-full text-sm font-semibold border ${
-              m.key === current
-                ? "bg-primary text-white border-primary"
-                : "bg-white border-line hover:border-primary"
-            }`}>
-            {m.label}
-            <span className="block text-xs font-normal opacity-80 tabular">
-              {inr(totalsByMonth[m.key] ?? 0)}
-            </span>
-          </button>
-        ))}
-      </nav>
+      <div data-tour="months">
+        <MonthRail months={months} active={current} onSelect={setActiveMonth}
+                   totals={totals} budgets={budgets} />
+      </div>
 
-      <section className="grid sm:grid-cols-3 gap-4">
-        <Stat label={`Budget · ${label}`} value={budget ? inr(budget) : "Not set"}
-              tone={budget ? "ink" : "muted"} />
-        <Stat label="Spent" value={inr(spent)}
-              hint={utilisation !== null ? `${utilisation}% of budget` : "No budget set"} />
-        <Stat label={remaining < 0 ? "Over budget by" : "Remaining"}
-              value={inr(Math.abs(remaining))}
-              tone={budget && remaining < 0 ? "danger" : budget ? "success" : "muted"} />
+      <section className="grid sm:grid-cols-3 gap-4" data-tour="stats">
+        <StatCard eyebrow={`Budget · ${label}`} icon={Wallet}
+                  value={budget ? inr(budget) : "Not set"} tone={budget ? "ink" : "muted"}
+                  hint={budget ? undefined : isAdmin ? "Set one below to track against it." : "An owner sets this."} />
+        <StatCard eyebrow="Spent" icon={TrendingUp} value={inr(spent)} meter={used ?? 0}
+                  tone={used > 100 ? "danger" : "ink"}
+                  hint={used !== null ? `${used}% of the budget used` : "No budget to compare against"} />
+        <StatCard eyebrow={remaining < 0 ? "Over budget by" : "Remaining"} icon={PiggyBank}
+                  value={budget ? inr(Math.abs(remaining)) : "—"}
+                  tone={budget && remaining < 0 ? "danger" : budget ? "success" : "muted"}
+                  hint={budget && remaining < 0 ? "Spending has passed the budget." : undefined} />
       </section>
 
       {isAdmin && <BudgetEditor monthKey={current} label={label} current={budget} uid={user.uid} />}
 
-      <div className="grid lg:grid-cols-2 gap-6 items-start">
-        <ExpenseForm settings={settings} editing={editing} onDone={() => setEditing(null)} />
+      <div className="grid lg:grid-cols-[1.6fr_1fr] gap-6 items-start">
+        <section className="bg-white rounded-card shadow-card p-6 min-w-0">
+          <div className="flex items-center gap-1 mb-5 p-1 rounded-xl bg-muted w-fit" role="tablist">
+            {[["ledger", "Ledger"], ["categories", "By category"]].map(([id, text]) => (
+              <button key={id} role="tab" aria-selected={view === id} data-compact
+                      onClick={() => setView(id)}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        view === id ? "bg-white text-ink shadow-sm" : "text-muted-foreground hover:text-ink"
+                      }`}>
+                {text}
+              </button>
+            ))}
+          </div>
 
-        <section className="bg-white rounded-card shadow-card p-6">
-          <h2 className="text-lg font-extrabold mb-4">Spend by category · {label}</h2>
-          {byCategory.length === 0 ? (
-            <Empty>Nothing logged for {label} yet.</Empty>
+          <h2 className="sr-only">{view === "ledger" ? `Expense ledger · ${label}` : `Spend by category · ${label}`}</h2>
+
+          {view === "ledger" ? (
+            <ExpenseLedger
+              expenses={monthExpenses} categories={settings.categories}
+              onEdit={setEditing} onDelete={remove}
+              emptyAction={
+                <button onClick={() => document.getElementById("description")?.focus()}
+                        className="inline-flex items-center gap-2 rounded-full bg-primary text-white font-semibold px-5">
+                  <Plus className="size-4" /> Log the first expense
+                </button>
+              }
+            />
           ) : (
-            <ul className="space-y-3">
-              {byCategory.map(([category, amount]) => (
-                <li key={category}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-semibold">{category}</span>
-                    <span className="tabular">{inr(amount)}</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-surface overflow-hidden">
-                    <div className="h-full bg-primary rounded-full"
-                         style={{ width: `${spent ? (amount / spent) * 100 : 0}%` }} />
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <CategoryBreakdown byCategory={byCategory} total={spent} label={label} />
           )}
         </section>
+
+        <div className="lg:sticky lg:top-8" data-tour="form">
+          <ExpenseForm settings={settings} editing={editing} onDone={() => setEditing(null)} />
+        </div>
       </div>
 
-      <section className="bg-white rounded-card shadow-card p-6">
-        <h2 className="text-lg font-extrabold mb-4">Six-month overview</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-muted-foreground border-b border-line">
-                <th className="py-2 font-semibold">Month</th>
-                <th className="py-2 font-semibold text-right">Budget</th>
-                <th className="py-2 font-semibold text-right">Spent</th>
-                <th className="py-2 font-semibold text-right">Difference</th>
-              </tr>
-            </thead>
-            <tbody>
-              {months.map((m) => {
-                const b = Number(budgets[m.key] || 0);
-                const s = totalsByMonth[m.key] ?? 0;
-                return (
-                  <tr key={m.key} className="border-b border-line last:border-0">
-                    <td className="py-2 font-semibold">{m.full}</td>
-                    <td className="py-2 text-right tabular">{b ? inr(b) : "—"}</td>
-                    <td className="py-2 text-right tabular">{inr(s)}</td>
-                    <td className={`py-2 text-right tabular ${b && s > b ? "text-danger" : "text-muted-foreground"}`}>
-                      {b ? inr(b - s) : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-              <tr className="font-extrabold">
-                <td className="py-2">Total</td>
-                <td className="py-2 text-right tabular">{grandBudget ? inr(grandBudget) : "—"}</td>
-                <td className="py-2 text-right tabular">{inr(grandSpent)}</td>
-                <td className="py-2 text-right tabular">
-                  {grandBudget ? inr(grandBudget - grandSpent) : "—"}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="bg-white rounded-card shadow-card p-6">
-        <h2 className="text-lg font-extrabold mb-4">Expense ledger · {label}</h2>
-        {monthExpenses.length === 0 ? (
-          <Empty>No expenses for {label}. Add the first one above.</Empty>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-muted-foreground border-b border-line">
-                  <th className="py-2 font-semibold">Date</th>
-                  <th className="py-2 font-semibold">Description</th>
-                  <th className="py-2 font-semibold">Category</th>
-                  <th className="py-2 font-semibold text-right">Amount</th>
-                  <th className="py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {monthExpenses.map((e) => (
-                  <tr key={e.id} className="border-b border-line last:border-0 align-top">
-                    <td className="py-3 whitespace-nowrap">{fmtDate(e.date)}</td>
-                    <td className="py-3">
-                      <div className="font-semibold">{e.description}</div>
-                      {(e.invoice || e.notes) && (
-                        <div className="text-muted-foreground text-xs mt-0.5">
-                          {e.invoice && <span>Invoice {e.invoice}</span>}
-                          {e.invoice && e.notes && " · "}
-                          {e.notes}
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3">{e.category}</td>
-                    <td className="py-3 text-right tabular font-semibold">{inr(e.amount)}</td>
-                    <td className="py-3 text-right whitespace-nowrap">
-                      <button onClick={() => setEditing(e)} data-compact
-                              className="text-sm font-semibold px-3 py-1 rounded-full border border-line">
-                        Edit
-                      </button>{" "}
-                      <button onClick={() => remove(e)} data-compact
-                              className="text-sm font-semibold px-3 py-1 rounded-full border border-line text-danger">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <ImportDialog open={importing} onClose={() => setImporting(false)} settings={settings} uid={user.uid} />
+      <Tour />
     </div>
   );
 }
 
-function Stat({ label, value, hint, tone = "ink" }) {
-  const colour = { ink: "text-ink", danger: "text-danger", success: "text-success", muted: "text-muted-foreground" }[tone];
+function GhostButton({ children, onClick, icon: Icon }) {
   return (
-    <div className="bg-white rounded-card shadow-card p-5">
-      <div className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">{label}</div>
-      <div className={`text-2xl font-extrabold tabular mt-1 ${colour}`}>{value}</div>
-      {hint && <div className="text-muted-foreground text-xs mt-1">{hint}</div>}
-    </div>
+    <button onClick={onClick}
+            className="inline-flex items-center gap-2 rounded-full border border-line bg-white text-sm font-semibold px-4 hover:border-primary hover:text-primary transition-colors">
+      <Icon className="size-4" />
+      {children}
+    </button>
   );
-}
-
-function Empty({ children }) {
-  return <p className="text-muted-foreground text-sm py-6 text-center">{children}</p>;
 }
 
 function BudgetEditor({ monthKey: key, label, current, uid }) {
@@ -250,9 +216,7 @@ function BudgetEditor({ monthKey: key, label, current, uid }) {
     if (amount === null) return toast.error("Budget needs to be a number.");
     setBusy(true);
     try {
-      await setDoc(doc(db, "budgets", key), {
-        amount, updatedBy: uid, updatedAt: serverTimestamp(),
-      });
+      await setDoc(doc(db, "budgets", key), { amount, updatedBy: uid, updatedAt: serverTimestamp() });
       toast.success(`Budget set for ${label}`);
       setOpen(false);
       setDraft("");
@@ -266,7 +230,8 @@ function BudgetEditor({ monthKey: key, label, current, uid }) {
   if (!open) {
     return (
       <button onClick={() => { setOpen(true); setDraft(current ? String(current) : ""); }}
-              className="text-sm font-semibold px-5 rounded-full border border-line bg-white">
+              className="inline-flex items-center gap-2 text-sm font-semibold px-5 rounded-full border border-line bg-white hover:border-primary hover:text-primary transition-colors">
+        <Wallet className="size-4" />
         {current ? `Change the ${label} budget` : `Set a budget for ${label}`}
       </button>
     );
@@ -274,17 +239,18 @@ function BudgetEditor({ monthKey: key, label, current, uid }) {
 
   return (
     <div className="bg-white rounded-card shadow-card p-5 flex flex-wrap items-end gap-3">
-      <div className="flex-1 min-w-48">
-        <label htmlFor="budget" className="block text-sm font-semibold mb-1">
-          Budget for {label} (₹)
-        </label>
-        <input id="budget" inputMode="decimal" value={draft} autoFocus
-               onChange={(e) => setDraft(e.target.value)} placeholder="500000"
-               className="w-full rounded-full border border-line px-4 tabular outline-none focus:border-primary" />
+      <div className="flex-1 min-w-[200px]">
+        <label htmlFor="budget" className="block text-sm font-semibold mb-1.5">Budget for {label}</label>
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">₹</span>
+          <input id="budget" inputMode="decimal" value={draft} autoFocus
+                 onChange={(e) => setDraft(e.target.value)} placeholder="5,00,000"
+                 className="w-full rounded-xl border border-line pl-8 pr-4 tabular outline-none focus:border-primary" />
+        </div>
       </div>
       <button onClick={save} disabled={busy}
               className="rounded-full bg-primary text-white font-semibold px-6 disabled:opacity-60">
-        {busy ? "Saving…" : "Save"}
+        {busy ? "Saving…" : "Save budget"}
       </button>
       <button onClick={() => setOpen(false)} className="rounded-full border border-line font-semibold px-6">
         Cancel

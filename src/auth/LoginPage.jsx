@@ -54,13 +54,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center bg-surface px-4 py-10">
-      <div className="w-full max-w-sm">
-        <img src="/logo.png" alt="Hire3x" className="h-9 w-auto mx-auto mb-6" />
+    <div className="min-h-screen grid place-items-center px-4 py-10">
+      <div className="w-full max-w-[380px]">
+        <div className="flex items-center gap-2.5 justify-center mb-7">
+          <img src="/logo.png" alt="" className="size-8" />
+          <span className="font-display font-extrabold text-lg tracking-tight">Hire3x</span>
+        </div>
 
         <div className="bg-white rounded-card shadow-card p-8">
-          <h1 className="text-2xl font-extrabold mb-1">Budget tracker</h1>
-          <p className="text-muted-foreground text-sm mb-6">Sign in to continue.</p>
+          <p className="text-[10px] font-bold tracking-[0.14em] text-primary">MARKETING</p>
+          <h1 className="text-[26px] leading-tight font-extrabold tracking-tight mt-1.5">
+            Budget tracker
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1 mb-6">
+            Sign in with the username your team uses.
+          </p>
 
           <form onSubmit={submit} noValidate>
             <Field
@@ -98,7 +106,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-full bg-primary text-white font-semibold hover:bg-primary-hover disabled:opacity-60"
+              className="w-full rounded-full bg-primary text-white font-semibold hover:bg-primary-hover transition-colors disabled:opacity-60 shadow-lift mt-1"
             >
               {busy ? "Signing in…" : "Sign in"}
             </button>
@@ -126,8 +134,8 @@ function Field({ id, label, value, onChange, invalid, hint, inputRef, type = "te
         onChange={(e) => onChange(e.target.value)}
         aria-invalid={invalid || undefined}
         aria-describedby={hintId}
-        className={`w-full rounded-full border px-4 outline-none focus:border-primary ${
-          invalid ? "border-danger" : "border-line"
+        className={`w-full rounded-xl border px-3.5 text-sm outline-none transition-colors ${
+          invalid ? "border-danger bg-danger/[0.03]" : "border-line focus:border-primary"
         }`}
         {...rest}
       />

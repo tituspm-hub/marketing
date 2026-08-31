@@ -60,7 +60,7 @@ export default function ChangePasswordPage() {
   return (
     <div className="min-h-screen grid place-items-center bg-surface px-4 py-10">
       <div className="w-full max-w-sm">
-        <img src="/logo.png" alt="Hire3x" className="h-9 w-auto mx-auto mb-6" />
+        <div className="flex items-center gap-2.5 justify-center mb-7"><img src="/logo.png" alt="" className="size-8" /><span className="font-display font-extrabold text-lg tracking-tight">Hire3x</span></div>
         <div className="bg-white rounded-card shadow-card p-8">
         <h1 className="text-2xl font-extrabold mb-1">
           {forced ? "Set your own password" : "Change password"}
@@ -89,7 +89,7 @@ export default function ChangePasswordPage() {
           )}
 
           <button type="submit" disabled={busy}
-                  className="w-full rounded-full bg-primary text-white font-semibold hover:bg-primary-hover disabled:opacity-60">
+                  className="w-full rounded-full bg-primary text-white font-semibold hover:bg-primary-hover transition-colors disabled:opacity-60 shadow-lift">
             {busy ? "Saving…" : "Save new password"}
           </button>
         </form>
@@ -111,7 +111,7 @@ function Field({ id, label, value, onChange, autoComplete, hint }) {
       <label htmlFor={id} className="block text-sm font-semibold mb-1">{label}</label>
       <input id={id} type="password" autoComplete={autoComplete} value={value}
              onChange={(e) => onChange(e.target.value)}
-             className="w-full rounded-full border border-line px-4 outline-none focus:border-primary" />
+             className="w-full rounded-xl border border-line px-3.5 text-sm outline-none transition-colors focus:border-primary" />
       {hint && <p className="text-muted-foreground text-xs mt-1">{hint}</p>}
     </div>
   );

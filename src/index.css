@@ -10,29 +10,29 @@
    `@theme inline` below would silently shadow. */
 :root {
   --background: #FFFFFF;
-  --foreground: #0A0A0B;
+  --foreground: #0B1220;
   --card: #FFFFFF;
-  --card-foreground: #0A0A0B;
+  --card-foreground: #0B1220;
   --popover: #FFFFFF;
-  --popover-foreground: #0A0A0B;
+  --popover-foreground: #0B1220;
   --primary: #2D68FE;
   --primary-foreground: #FFFFFF;
-  --secondary: #F7F8FA;
-  --secondary-foreground: #0A0A0B;
-  --muted: #F7F8FA;
-  --muted-foreground: #6B7280;
-  --accent: #F7F8FA;
-  --accent-foreground: #0A0A0B;
+  --secondary: #F1F5FD;
+  --secondary-foreground: #0B1220;
+  --muted: #F4F7FE;
+  --muted-foreground: #64748B;
+  --accent: #EEF4FF;
+  --accent-foreground: #1D4FD8;
   --destructive: #DC2626;
-  --border: #E8EAEE;
-  --input: #E8EAEE;
+  --border: #E7EBF3;
+  --input: #E7EBF3;
   --ring: #2D68FE;
   --chart-1: #2D68FE;
   --chart-2: #12805C;
   --chart-3: #B45309;
   --chart-4: #7C3AED;
   --chart-5: #DB2777;
-  --radius: 0.625rem;
+  --radius: 0.75rem;
   --sidebar: #F7F8FA;
   --sidebar-foreground: #0A0A0B;
   --sidebar-primary: #2D68FE;
@@ -46,9 +46,20 @@
 /* App tokens with no shadcn counterpart. Nothing here may repeat a name that
    `@theme inline` aliases, or the later block wins and the brand value is lost. */
 @theme {
-  --color-ink: #0A0A0B;
-  --color-line: #E8EAEE;
-  --color-surface: #F7F8FA;
+  --color-ink: #0B1220;
+  --color-line: #E7EBF3;
+  --color-surface: #F7F9FF;
+
+  /* Category accents. Assigned by position so a renamed category keeps its colour
+     and two categories are never the same hue. */
+  --color-cat-1: #2D68FE;
+  --color-cat-2: #10B981;
+  --color-cat-3: #F59E0B;
+  --color-cat-4: #7C3AED;
+  --color-cat-5: #EC4899;
+  --color-cat-6: #06B6D4;
+  --color-cat-7: #EF4444;
+  --color-cat-8: #0EA5E9;
   --color-primary-hover: #1D4FD8;
 
   --color-peach: #FFE9DC;
@@ -62,8 +73,13 @@
   --color-danger: #DC2626;
   --color-warn: #B45309;
 
-  --radius-card: 16px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -8px rgba(16, 24, 40, 0.10);
+  --radius-card: 18px;
+  /* Two-layer: a hairline to define the edge on the tinted canvas, then a wide soft
+     drop so cards read as lifted rather than outlined. */
+  --shadow-card: 0 0 0 1px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.04),
+                 0 12px 32px -12px rgba(15, 23, 42, 0.10);
+  --shadow-lift: 0 0 0 1px rgba(45, 104, 254, 0.14), 0 2px 4px rgba(15, 23, 42, 0.04),
+                 0 16px 40px -12px rgba(45, 104, 254, 0.20);
 
   --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
@@ -114,12 +130,31 @@
 @layer base {
   * { @apply border-border outline-ring/50; }
   html { -webkit-font-smoothing: antialiased; @apply font-sans; }
-  body { @apply bg-background text-foreground; }
+  /* The canvas is not flat white: a cool wash anchored top-right, matching the
+     product's other surfaces, so white cards read as raised out of it. */
+  body {
+    @apply text-foreground;
+    background:
+      radial-gradient(1200px 600px at 88% -12%, #E3EDFF 0%, transparent 62%),
+      radial-gradient(900px 500px at 0% 0%, #F0F5FF 0%, transparent 55%),
+      var(--color-surface);
+    background-attachment: fixed;
+  }
   h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
   /* Every figure in this app is money; align the columns. */
   .tabular { font-variant-numeric: tabular-nums; }
   /* Clarity constraint: interactive targets are never smaller than 44px.
      Icon-only controls opt out with data-compact. */
   button:not([data-compact]), [role="button"]:not([data-compact]),
-  a.btn, input, select { min-height: 44px; }
+  a.btn, input, select, textarea { min-height: 44px; }
+
+  /* Every interactive element states it is interactive. The old build left buttons
+     and rows visually identical to static text. */
+  button, [role="button"], a, select, summary { cursor: pointer; }
+  button:disabled, [role="button"][aria-disabled="true"] { cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 8px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
 }
