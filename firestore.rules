@@ -1,0 +1,104 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Mirrors SUPER_ADMIN_UIDS in src/shared/roles.js.
+    // tests/roles.test.js parses this function and fails if the lists differ.
+    function superAdmins() {
+      return ['sa_yash', 'sa_titus', 'sa_gebin'];
+    }
+
+    function signedIn() { return request.auth != null; }
+    function uid()      { return request.auth.uid; }
+    function profile()  { return get(/databases/$(database)/documents/users/$(uid())).data; }
+    function isActive() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(uid()))
+        && profile().disabled != true;
+    }
+    function isSuper() { return signedIn() && uid() in superAdmins(); }
+    function isAdmin() { return isSuper() || (signedIn() && request.auth.token.role == 'admin'); }
+
+    function settings()   { return get(/databases/$(database)/documents/settings/app).data; }
+    function inPeriod(m)  { return m >= settings().periodStart && m <= settings().periodEnd; }
+
+    function expenseKeys() {
+      return ['description','amount','date','month','category','invoice','notes',
+              'createdBy','createdAt','updatedBy','updatedAt'];
+    }
+
+    function validExpense(d) {
+      return d.keys().hasOnly(expenseKeys())
+        && d.keys().hasAll(['description','amount','date','month','category',
+                            'createdBy','createdAt','updatedBy','updatedAt'])
+        && d.description is string && d.description.size() > 0 && d.description.size() <= 200
+        && d.amount is number && d.amount > 0 && d.amount <= 100000000
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.month is string && d.date.matches('^' + d.month + '-[0-9]{2}$')
+        && d.category is string && d.category.size() > 0 && d.category.size() <= 60
+        && (!('invoice' in d.keys()) || (d.invoice is string && d.invoice.size() <= 80))
+        && (!('notes' in d.keys()) || (d.notes is string && d.notes.size() <= 1000));
+    }
+
+    match /settings/{doc} {
+      allow read:  if signedIn();
+      allow write: if isAdmin() && isActive();
+    }
+
+    // Written only by the backend Admin SDK, which bypasses these rules entirely.
+    // Denying all client writes is what makes role escalation impossible.
+    match /users/{userId} {
+      allow read:  if signedIn();
+      allow write: if false;
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if signedIn() && isActive();
+
+      allow create: if signedIn() && isActive()
+        && validExpense(request.resource.data)
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.updatedBy == uid()
+        && inPeriod(request.resource.data.month);
+
+      allow update: if signedIn() && isActive()
+        && validExpense(request.resource.data)
+        && request.resource.data.updatedBy == uid()
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && inPeriod(request.resource.data.month);
+
+      allow delete: if signedIn() && isActive();
+    }
+
+    match /budgets/{monthKey} {
+      allow read: if signedIn() && isActive();
+      allow write: if isAdmin() && isActive()
+        && request.resource.data.keys().hasOnly(['amount','updatedBy','updatedAt'])
+        && request.resource.data.amount is number
+        && request.resource.data.amount >= 0
+        && request.resource.data.amount <= 1000000000
+        && request.resource.data.updatedBy == uid()
+        && monthKey.matches('^[0-9]{4}-[0-9]{2}$')
+        && inPeriod(monthKey);
+    }
+
+    match /audit/{entryId} {
+      allow read:   if signedIn();
+      allow create: if signedIn() && isActive()
+        && request.resource.data.by == uid()
+        && request.resource.data.at == request.time;
+      allow update, delete: if false;
+    }
+
+    match /presence/{userId} {
+      allow read:  if signedIn();
+      allow write: if signedIn() && userId == uid();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
