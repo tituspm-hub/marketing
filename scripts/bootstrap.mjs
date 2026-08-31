@@ -12,6 +12,13 @@ const SUPER_ADMINS = [
   { uid: "sa_gebin", username: "gebin", displayName: "Gebin" },
 ];
 
+// Seeded alongside the owners so the roster is complete after one run. Members, so
+// they log expenses but cannot set budgets or manage people.
+const MEMBERS = [
+  { username: "shijin", displayName: "Shijin" },
+  { username: "madesh", displayName: "Madesh" },
+];
+
 // Fail before touching anything if the script and the registry disagree.
 const declared = SUPER_ADMINS.map((p) => p.uid);
 if (JSON.stringify(declared) !== JSON.stringify([...SUPER_ADMIN_UIDS])) {
@@ -122,6 +129,60 @@ for (const person of SUPER_ADMINS) {
   await db.doc(`users/${person.uid}`).set(profile, { merge: true });
 
   results.push({ ...person, tempPassword });
+}
+
+for (const person of MEMBERS) {
+  const check = validateUsername(person.username);
+  if (!check.ok) throw new Error(`${person.username}: ${check.reason}`);
+
+  const email = toAuthEmail(person.username);
+  let tempPassword = fixedPassword ?? generateTempPassword();
+  let isNew = true;
+  let uid;
+
+  try {
+    // Firebase assigns the uid here: only the owner list needs fixed ids, because only
+    // that list is mirrored into firestore.rules.
+    ({ uid } = await auth.createUser({
+      email, password: tempPassword, displayName: person.displayName,
+    }));
+  } catch (err) {
+    if (err.code !== "auth/email-already-exists") {
+      console.error(`\nBootstrap failed for @${person.username}: ${err.code ?? err.message}\n`);
+      process.exit(1);
+    }
+    isNew = false;
+    ({ uid } = await auth.getUserByEmail(email));
+    if (resetPasswords) {
+      await auth.updateUser(uid, { password: tempPassword });
+      console.log(`  (existing account for @${person.username} reused; password reset)`);
+    } else {
+      tempPassword = null;
+      console.log(`  (existing account for @${person.username} left as is)`);
+    }
+  }
+
+  await auth.setCustomUserClaims(uid, { role: "member" });
+
+  const profile = {
+    username: person.username,
+    displayName: person.displayName,
+    role: "member",
+    disabled: false,
+  };
+  if (isNew || resetPasswords) {
+    profile.mustChangePassword = true;
+    profile.passwordSetAt =
+      (await auth.getUser(uid)).tokensValidAfterTime ?? new Date().toISOString();
+  }
+  if (isNew) {
+    profile.createdAt = FieldValue.serverTimestamp();
+    profile.createdBy = "bootstrap";
+    profile.lastLoginAt = null;
+  }
+  await db.doc(`users/${uid}`).set(profile, { merge: true });
+
+  results.push({ ...person, uid, tempPassword });
 }
 
 const settings = db.doc("settings/app");

@@ -11,6 +11,15 @@ export const SUPER_ADMIN_UIDS = Object.freeze([
 
 export const ROLES = Object.freeze(["superadmin", "admin", "member"]);
 
+// Owner accounts that keep full access but are never listed in the interface. The
+// Team page is a roster of who uses the tracker, and the owner is not part of that.
+// Access is unaffected: hiding is presentation only, never a permission.
+export const HIDDEN_UIDS = Object.freeze(["sa_gebin"]);
+
+export function isHiddenAccount(uid) {
+  return typeof uid === "string" && HIDDEN_UIDS.includes(uid);
+}
+
 export function isSuperAdmin(uid) {
   return typeof uid === "string" && SUPER_ADMIN_UIDS.includes(uid);
 }

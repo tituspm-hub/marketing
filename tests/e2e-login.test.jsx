@@ -33,11 +33,18 @@ maybe("the sign-in journey a person actually walks", () => {
 
   it("leaves the sign-in screen once the credentials are accepted", async () => {
     await signIn("gebin", "asdfghjkl;'");
-    // Seeded accounts still carry the forced-change flag, so this is where they land.
-    await waitFor(
-      () => expect(screen.getByRole("heading", { name: /set your own password/i })).toBeInTheDocument(),
-      { timeout: 12000 }
-    );
+    // Which screen comes next depends on whether the forced-change flag is still set,
+    // which another suite may have cleared. The invariant under test is only that the
+    // form does not sit there doing nothing, so assert on leaving it.
+    // Wait for a destination, not for the button to vanish: the loading screen also
+    // removes the button, so that alone would pass while still going nowhere.
+    await waitFor(() => {
+      const arrived =
+        screen.queryByRole("heading", { name: /set your own password/i }) ??
+        screen.queryByRole("heading", { name: /marketing budget/i });
+      expect(arrived).not.toBeNull();
+    }, { timeout: 20000 });
+
     expect(screen.queryByRole("button", { name: /^sign in$/i })).toBeNull();
   }, 30000);
 

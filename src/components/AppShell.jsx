@@ -1,8 +1,10 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider.jsx";
+import { isHiddenAccount } from "../shared/roles.js";
 
 export default function AppShell({ children }) {
-  const { username, role, isAdmin, signOut } = useAuth();
+  const { user, username, role, isAdmin, signOut } = useAuth();
+  const hidden = isHiddenAccount(user?.uid);
 
   const links = [
     { to: "/", label: "Dashboard", show: true },
@@ -33,9 +35,11 @@ export default function AppShell({ children }) {
           </nav>
 
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground hidden sm:inline">
-              @{username}{role !== "member" ? ` · ${role}` : ""}
-            </span>
+            {!hidden && (
+              <span className="text-sm text-muted-foreground hidden sm:inline">
+                @{username}{role !== "member" ? ` · ${role}` : ""}
+              </span>
+            )}
             <button onClick={signOut} className="text-sm font-semibold px-4 rounded-full border border-line">
               Sign out
             </button>

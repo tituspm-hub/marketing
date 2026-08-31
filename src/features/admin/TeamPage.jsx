@@ -2,7 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../../auth/AuthProvider.jsx";
 import { callApi } from "../../lib/api.js";
-import { canActOn, canAssignRoles, isSuperAdmin } from "../../shared/roles.js";
+import { canActOn, canAssignRoles, isSuperAdmin, isHiddenAccount } from "../../shared/roles.js";
 import { generateTempPassword } from "../../lib/password.js";
 import { useTeam } from "./useTeam.js";
 import AddTeammateDialog from "./AddTeammateDialog.jsx";
@@ -11,7 +11,9 @@ const ROLE_LABEL = { superadmin: "Owner", admin: "Admin", member: "Member" };
 
 export default function TeamPage() {
   const { user, role } = useAuth();
-  const { members, loading, error } = useTeam();
+  const { members: allMembers, loading, error } = useTeam();
+  // The roster is who uses the tracker. Owner accounts stay out of it entirely.
+  const members = allMembers.filter((m) => !isHiddenAccount(m.uid));
   const [adding, setAdding] = useState(false);
   const [busyUid, setBusyUid] = useState(null);
 

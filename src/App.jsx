@@ -7,7 +7,7 @@ import RequirePasswordChange from "./auth/RequirePasswordChange.jsx";
 import LoginPage from "./auth/LoginPage.jsx";
 import ChangePasswordPage from "./auth/ChangePasswordPage.jsx";
 import AppShell from "./components/AppShell.jsx";
-import DashboardPlaceholder from "./features/dashboard/DashboardPlaceholder.jsx";
+import DashboardPage from "./features/dashboard/DashboardPage.jsx";
 import TeamPage from "./features/admin/TeamPage.jsx";
 
 export default function App() {
@@ -21,7 +21,7 @@ export default function App() {
             element={<RequirePasswordChange><ChangePasswordPage /></RequirePasswordChange>}
           />
           <Route element={<RequireAuth><AppShell /></RequireAuth>}>
-            <Route path="/" element={<DashboardPlaceholder />} />
+            <Route path="/" element={<DashboardPage />} />
           </Route>
           <Route
             path="/team"
