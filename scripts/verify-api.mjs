@@ -77,8 +77,13 @@ function eq(actual, expected, what) {
   }
 }
 
-const gebinPassword = process.argv[2];
-const gebinToken = await tokenFor("gebin", gebinPassword);
+const [callerName, callerPassword] = process.argv.slice(2);
+if (!callerName || !callerPassword) {
+  console.error("usage: node scripts/verify-api.mjs <super-admin username> <password>");
+  process.exit(2);
+}
+const gebinToken = await tokenFor(callerName, callerPassword);
+const callerUid = (await adminAuth().verifyIdToken(gebinToken)).uid;
 const memberPassword = generateTempPassword();
 const otherPassword = generateTempPassword();
 let memberUid, otherUid;
@@ -162,7 +167,7 @@ await expect("acting on a super-admin is refused with 403", async () => {
   eq((await call(routes.setRole, gebinToken, { uid: "sa_yash", role: "member" })).statusCode, 403, "status");
 });
 await expect("acting on yourself is refused with 400", async () => {
-  eq((await call(routes.setRole, gebinToken, { uid: "sa_gebin", role: "member" })).statusCode, 400, "status");
+  eq((await call(routes.setRole, gebinToken, { uid: callerUid, role: "member" })).statusCode, 400, "status");
 });
 await expect("promoting to superadmin is refused with 403", async () => {
   eq((await call(routes.setRole, gebinToken, { uid: otherUid, role: "superadmin" })).statusCode, 403, "status");
@@ -218,10 +223,10 @@ console.log("\n--- clear-must-change ---");
 await expect("the caller clears their own prompt", async () => {
   // Set the precondition here rather than relying on bootstrap state, which an
   // earlier run of this harness has already consumed.
-  await adminDb().doc("users/sa_gebin").update({ mustChangePassword: true });
+  await adminDb().doc(`users/${callerUid}`).update({ mustChangePassword: true });
   const r = await call(routes.clearMustChange, gebinToken, {});
   eq(r.statusCode, 200, "status");
-  eq((await adminDb().doc("users/sa_gebin").get()).data().mustChangePassword, false, "cleared");
+  eq((await adminDb().doc(`users/${callerUid}`).get()).data().mustChangePassword, false, "cleared");
 });
 await expect("a repeat call is idempotent and writes no second audit entry", async () => {
   const before = (await adminDb().collection("audit").get()).size;
