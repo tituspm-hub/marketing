@@ -20,7 +20,13 @@ function credentials() {
 
 export function adminApp(): App {
   if (!cached) {
-    cached = getApps()[0] ?? initializeApp({ credential: cert(credentials()) });
+    // Against the emulator the SDK authenticates through the host env vars, so
+    // demanding a production service account would make local runs impossible.
+    cached =
+      getApps()[0] ??
+      (process.env.FIRESTORE_EMULATOR_HOST
+        ? initializeApp({ projectId: process.env.GCLOUD_PROJECT ?? "demo-hire3x" })
+        : initializeApp({ credential: cert(credentials()) }));
   }
   return cached;
 }

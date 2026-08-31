@@ -8,3 +8,4 @@ firebase-debug.log
 firestore-debug.log
 .vercel/
 *.zip
+.env

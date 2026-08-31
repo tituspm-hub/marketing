@@ -1,8 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  status: number;
+
+  // Written out rather than as a parameter property: that syntax is not erasable, so
+  // it cannot be run by anything that only strips types (Node, and the local harness).
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
   }
 }
 
