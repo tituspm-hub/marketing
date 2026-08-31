@@ -3,6 +3,9 @@
 **Date:** 2026-08-31
 **Status:** Approved
 **Supersedes:** the localStorage-only single-file application on `main`
+**Revision:** 2026-08-31 — hosting moved from Firebase Hosting to Vercel; Cloud
+Functions replaced by Vercel Serverless Functions; receipt attachments dropped so the
+system runs entirely on free tiers.
 
 ---
 
@@ -48,15 +51,18 @@ people saving at the same time would silently destroy each other's expenses.
 | Components | shadcn/ui primitives | sourced via the shadcn MCP, not hand-rolled |
 | Auth | Firebase Auth (Email/Password provider) | driven by synthetic addresses, see §6 |
 | Database | Cloud Firestore | one document per expense |
-| Files | Cloud Storage for Firebase | receipt attachments |
-| Server | Cloud Functions, Node 20, TypeScript | privileged operations only |
-| Hosting | Firebase Hosting | replaces Vercel |
+| Server | Vercel Serverless Functions, Node 20, TypeScript | privileged operations only |
+| Hosting | Vercel | the project already deploys there |
 | Tests | Vitest, Testing Library, `@firebase/rules-unit-testing` | rules tested against the emulator |
 
-The project requires the **Blaze** billing plan. Cloud Functions and, for projects
-created after October 2024, Cloud Storage are unavailable on Spark. At five users
-the usage sits inside the free allowance; the plan exists to hold a payment method,
-not because meaningful cost is expected.
+**The entire system runs on free tiers.** Firebase stays on the **Spark** plan —
+Auth and Firestore only, no Cloud Functions and no Cloud Storage, so no payment
+method is required. The privileged backend is a set of Vercel Serverless Functions on
+the **Hobby** plan. Neither vendor requires a card.
+
+The one real secret in the system is the Firebase service-account key used by the
+backend. It is stored as a Vercel environment variable, never committed, and never
+shipped to the browser.
 
 ### 4.2 The central decision — document granularity
 
@@ -77,11 +83,12 @@ src/
   main.jsx
   App.jsx                    router shell only
   lib/
-    firebase.js              SDK init; exports auth, db, storage, functions
+    firebase.js              SDK init; exports auth and db
     format.js                inr(), fmtDate(), escapeHtml(), parseAmount()
     period.js                month list derived from settings; no hardcoded dates
     quickAdd.js              natural-language expense parser (pure, unit-tested)
     csv.js                   import parse + export serialise
+    api.js                   authenticated fetch wrapper for the /api routes
     pdf.js                   pdfmake document definition for the monthly report
   auth/
     AuthProvider.jsx         onAuthStateChanged + profile doc + custom claims
@@ -94,12 +101,17 @@ src/
     useBudgets.js
     useUsers.js              admin-only user list
     usePresence.js           heartbeat + who-is-here
+  shared/
+    roles.js                 super-admin UID registry; imported by client AND api
   features/
     dashboard/               month strip, totals, pacing, category breakdown
-    expenses/                quick-add bar, list, inline edit, undo, receipts
+    expenses/                quick-add bar, list, inline edit, undo
     reports/                 report preview, PDF export, CSV in/out
     admin/                   team management
     settings/                period, categories
+api/
+  _lib/                      admin SDK init, ID-token verification, role guards
+  users/                     create, reset-password, set-role, set-disabled, clear-must-change
   components/
     ui/                      shadcn primitives
     CommandPalette.jsx
@@ -141,7 +153,7 @@ createdAt, createdBy, lastLoginAt
 ```
 
 **No client may write to this collection.** Rules deny all client writes. Every field
-is set by Cloud Functions running the Admin SDK. This removes any possibility of
+is set by the backend API running the Admin SDK. This removes any possibility of
 privilege escalation through a UI bug.
 
 ### 5.3 `/expenses/{expenseId}`
@@ -154,7 +166,6 @@ month         "YYYY-MM"   denormalised from date; the query key
 category       string, must match a configured category id
 invoice        optional string
 notes          optional string, <= 1000 chars
-receipts       [{ path, name, size, contentType, uploadedAt, uploadedBy }]
 createdBy, createdAt, updatedBy, updatedAt
 ```
 
@@ -183,8 +194,20 @@ action      "expense.create" | "expense.update" | "expense.delete"
 entityId, summary, before, after
 ```
 
-Written **exclusively by Firestore trigger functions**. Clients have read access and
-no write access, so entries cannot be forged or erased by a signed-in user.
+Vercel cannot host Firestore triggers, so audit entries for expense and budget changes
+are written by the client under rules that permit **`create` only** — no update, no
+delete — with `by` forced to equal the caller's UID and `at` forced to the server
+timestamp. Entries therefore cannot be altered or erased after the fact, and cannot be
+attributed to someone else.
+
+A signed-in user could still omit an entry. The tamper-resistant fallback is that every
+expense document carries `updatedBy` and `updatedAt`, which the rules force to match the
+caller on every write, so "who last touched this" survives a missing audit row. For a
+five-person internal tool this is an accepted limit, recorded here so it is not mistaken
+for a stronger guarantee than it is.
+
+User-management actions are audited server-side by the backend, where the client has no
+opportunity to skip them.
 
 ### 5.6 `/presence/{uid}`
 
@@ -213,7 +236,7 @@ uniqueness constraint on the address gives username uniqueness for free.
 
 The UI never displays an `@`. Login has exactly two fields: Username, Password.
 
-**Username rules**, enforced in the Cloud Function and mirrored in the form:
+**Username rules**, enforced in the backend API and mirrored in the form:
 lowercase `a-z0-9._-`, 3–20 characters, must begin with a letter, and must not be one
 of the reserved words `admin`, `root`, `system`, `support`, `api`, `null`, `firebase`.
 
@@ -243,7 +266,6 @@ A "Change password" action remains permanently available from the account menu.
 | Capability | superadmin | admin | member |
 | --- | :-: | :-: | :-: |
 | Add / edit / delete expenses | yes | yes | yes |
-| Upload receipts | yes | yes | yes |
 | Set monthly budgets | yes | yes | no |
 | Edit period and categories | yes | yes | no |
 | Create a member | yes | yes | no |
@@ -259,14 +281,16 @@ A "Change password" action remains permanently available from the account menu.
 Two independent mechanisms, both server-side:
 
 1. `firestore.rules` contains a literal list of the two super-admin UIDs.
-2. `functions/src/roles.ts` contains the same literal list. Every callable rejects any
-   operation whose *target* UID appears in it, other than the target acting on itself.
+2. `src/shared/roles.js` contains the same literal list and is imported by both the
+   browser bundle and the Vercel backend, so the two copies cannot drift. Every API
+   route rejects any operation whose *target* UID appears in it.
 
 Roles are carried in Firebase Auth **custom claims** so rules can check them without a
 document read, and the `/users` mirror document exists for display only.
 
-Because clients cannot write `/users` and cannot mint claims, there is no code path —
-buggy or malicious — by which a member becomes an admin.
+Because clients cannot write `/users` and cannot mint custom claims, there is no code
+path — buggy or malicious — by which a member becomes an admin. The backend verifies the
+caller's Firebase ID token on every request before reading their role.
 
 ### 7.3 Firestore rules — shape
 
@@ -282,7 +306,9 @@ isAdmin()     isSuper() || role() == "admin"
 /expenses/{e}   read: isSignedIn() && isActive()
                 create/update/delete: isSignedIn() && isActive() && validExpense()
 /budgets/{m}    read: isSignedIn()          write: isAdmin() && isActive()
-/audit/{a}      read: isSignedIn()          write: never (triggers only)
+/audit/{a}      read: isSignedIn()
+                create: isSignedIn() && isActive() && by == uid()
+                update, delete: never
 /presence/{u}   read: isSignedIn()          write: isSignedIn() && u == request.auth.uid
 ```
 
@@ -291,25 +317,27 @@ isAdmin()     isSuper() || role() == "admin"
 `updatedBy` equal the caller's uid. Rules are the last line of defence; the form is
 merely the first.
 
-Storage rules restrict receipt writes to signed-in active users, cap uploads at 10 MB,
-and allow only `image/*` and `application/pdf`.
-
 ---
 
-## 8. Cloud Functions
+## 8. Backend API
 
-All are HTTPS callables unless noted. Each begins by asserting an authenticated
-caller, loading the caller's role, and rejecting disabled accounts.
+Vercel Serverless Functions under `/api`, Node 20, TypeScript. Every route begins by
+verifying the caller's Firebase ID token from the `Authorization: Bearer` header, loading
+their `/users` document, and rejecting disabled accounts. Each route writes its own
+`/audit` entry through the Admin SDK.
 
-| Function | Caller | Behaviour |
+| Route | Caller | Behaviour |
 | --- | --- | --- |
-| `createUser` | admin+ | Validates username. Creates the auth user, sets the role claim, writes `/users`. A non-super admin may only create `member`. Returns nothing sensitive; the temp password came from the caller. |
-| `resetUserPassword` | admin+ | Sets a new temp password and re-flags `mustChangePassword`. Admins may target members only. |
-| `setUserRole` | superadmin | Promote between `member` and `admin` only. Rejects any target in the super-admin list, and refuses `superadmin` as a target role. |
-| `setUserDisabled` | admin+ | Admins may disable members only. Rejects any target in the super-admin list. |
-| `clearMustChangePassword` | self | Called after a successful `updatePassword`. |
-| `onExpenseWrite` | trigger | Writes the `/audit` entry for create, update, delete. |
-| `onBudgetWrite` | trigger | Writes the `/audit` entry. |
+| `POST /api/users/create` | admin+ | Validates the username. Creates the auth user, sets the role custom claim, writes `/users`. A non-super admin may only create `member`. The temp password is supplied by the caller and never stored. |
+| `POST /api/users/reset-password` | admin+ | Sets a new temp password and re-flags `mustChangePassword`. Admins may target members only. |
+| `POST /api/users/set-role` | superadmin | Promotes between `member` and `admin` only. Rejects any target in the super-admin list, and refuses `superadmin` as a target role. |
+| `POST /api/users/set-disabled` | admin+ | Admins may disable members only. Rejects any target in the super-admin list. |
+| `POST /api/users/clear-must-change` | self | Called after a successful `updatePassword`. |
+
+Expense and budget writes go **directly** from browser to Firestore, not through this
+API. That is deliberate: it preserves realtime `onSnapshot` sync, optimistic updates, and
+offline tolerance, none of which survive a round trip through a serverless function.
+Security rules, not the API, are what protect those collections.
 
 ### 8.1 Bootstrap
 
@@ -317,9 +345,11 @@ Super-admins cannot be created by the app, since creating them requires an admin
 `scripts/bootstrap.mjs` runs once locally against a service-account key: it creates
 Yash and Titus with temp passwords, sets their `superadmin` claims, writes their
 `/users` documents, and prints their UIDs. Those UIDs are pasted into
-`firestore.rules` and `functions/src/roles.ts`, and the key is then deleted.
+`firestore.rules` and `src/shared/roles.js`.
 
-The service-account key is never committed. `.gitignore` covers `*serviceAccount*.json`.
+The same service-account key is then base64-encoded into the Vercel environment variable
+`FIREBASE_SERVICE_ACCOUNT`. The local copy is deleted afterwards. The key is never
+committed; `.gitignore` covers `*serviceAccount*.json`.
 
 ---
 
@@ -422,12 +452,7 @@ Catalogued from the current `src/App.jsx`.
   marked recurring, dated to the current month, presented for review before commit.
 - **Sparklines** per category across the configured period.
 
-### 11.4 Receipts
-
-Drag-and-drop onto an expense row or the edit form. Images and PDFs, 10 MB cap,
-stored at `receipts/{expenseId}/{uuid}`. Thumbnails in the list; links in the report.
-
-### 11.5 Reports
+### 11.4 Reports
 
 - **PDF** via `pdfmake` — real vector text and tables, one click, no print dialog and
   no canvas rasterisation. Carries the executive summary, category breakdown with
@@ -436,6 +461,11 @@ stored at `receipts/{expenseId}/{uuid}`. Thumbnails in the list; links in the re
 - **CSV export** of the ledger for finance.
 - **CSV import** with a column-mapping step and a preview of what will be created,
   so a malformed file never writes partial data.
+
+Receipt attachments are deliberately **out of scope**: they would require Cloud Storage,
+which forces the Firebase project onto a paid plan. Invoice numbers remain as text on
+each expense and appear in the ledger. Attachments can be added later without reworking
+anything described here.
 
 ---
 
@@ -459,6 +489,8 @@ deleted.
 | `lib/csv` | round-trip, malformed rows, injection-prone cell values |
 | budget math | totals, remaining, utilisation, pacing, division by zero |
 | rules (emulator) | every cell of the §7.1 matrix, both allow and deny |
+| `shared/roles` | guard matrix; the super-admin list is non-empty and well-formed |
+| api routes | token verification, role guards, super-admin rejection, input validation |
 | components | login, quick-add, undo delete, forced password change |
 
 The rules suite is the important one: it asserts that a member cannot write `/users`,
@@ -471,12 +503,15 @@ cannot set a budget, and that no caller can demote a super-admin.
 These are supplied by the user; the build cannot complete without them.
 
 1. Display name and username for each of the five people.
-2. A Firebase project on the Blaze plan with Email/Password auth, Firestore, and
-   Storage enabled, and the web app `firebaseConfig` block.
-3. The two super-admin UIDs, produced by running `scripts/bootstrap.mjs` (§8.1).
+2. A Firebase project on the free **Spark** plan with Email/Password auth and Firestore
+   enabled, and the web app `firebaseConfig` block.
+3. A Vercel project linked to this repository, on the free Hobby plan.
+4. The two super-admin UIDs, produced by running `scripts/bootstrap.mjs` (§8.1).
+5. A Firebase service-account key, base64-encoded into the Vercel environment variable
+   `FIREBASE_SERVICE_ACCOUNT`.
 
-Items 1 and 2 are inputs. Item 3 is generated during setup and pasted into
-`firestore.rules` and `functions/src/roles.ts`.
+Items 1–3 are inputs. Items 4–5 are generated during setup; the UIDs are pasted into
+`firestore.rules` and `src/shared/roles.js`.
 
 ---
 
@@ -486,8 +521,8 @@ Items 1 and 2 are inputs. Item 3 is generated during setup and pasted into
    password change, route guards, bootstrap script, rules v1 with tests.
 2. **Data layer.** Settings, expenses, budgets hooks. localStorage migration. Unit tests.
 3. **Interface.** Tokens, shadcn install, shell, dashboard, expense list, budget panel.
-4. **Administration.** Team page, Settings page, the five callables, role tests.
+4. **Administration.** Team page, Settings page, the five API routes, role tests.
 5. **Product layer.** Quick-add, palette, shortcuts, autocomplete, inline edit, undo,
    presence, pacing, duplicates, recurring.
-6. **Reports.** PDF, CSV import and export, receipts.
+6. **Reports.** PDF, CSV import and export.
 7. **Hardening.** Security review, full failure-point sweep against §10, deploy.
