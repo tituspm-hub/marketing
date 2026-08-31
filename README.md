@@ -36,10 +36,22 @@ The emulators keep state only while they are running, so re-seed after a restart
 
 ### Environment
 
-`.env.local` holds the browser's Firebase config and already points at the emulators
-(`VITE_USE_EMULATORS=true`). `.env` points the backend Admin SDK at the same emulators so
-`vercel dev` needs no service account. Neither file is committed; `.env.example` lists the
-keys. In production `FIREBASE_SERVICE_ACCOUNT` is set in the Vercel dashboard.
+Three files, none of them committed:
+
+| File | Loaded by | Points at |
+| --- | --- | --- |
+| `.env.local` | `npm run dev`, `npm test` | the emulators (`demo-hire3x`) |
+| `.env.production.local` | `npm run build` on this machine | the live `hire3x-marketing` project |
+| `.env` | the Admin SDK / `vercel dev` | the emulators, so no service account is needed |
+
+`npm run dev` therefore can never write to production, and `npm run build` always
+targets the live project. On Vercel the six `VITE_FIREBASE_*` values and
+`FIREBASE_SERVICE_ACCOUNT` come from the dashboard instead; Vite inlines the `VITE_*`
+ones at build time, so adding any after a deployment needs a redeploy.
+
+The six `VITE_FIREBASE_*` values are public by design — they ship inside the browser
+bundle, and access is controlled by `firestore.rules`. The service-account key is the
+only real secret, and it never belongs in the repo.
 
 ## Verification
 
