@@ -46,6 +46,12 @@ describe("effectiveRole", () => {
     expect(effectiveRole("uid_x", "wizard")).toBe("member");
     expect(effectiveRole("uid_x", null)).toBe("member");
   });
+  it("refuses a forged superadmin role on a UID that is not in the registry", () => {
+    // Defence in depth: /users is client-write-denied by rules, but the /api backend
+    // writes it with the Admin SDK and bypasses rules, so a bad write there must not
+    // be able to confer super-admin. Only the hardcoded UID list may do that.
+    expect(effectiveRole("uid_impostor", "superadmin")).toBe("member");
+  });
 });
 
 describe("canManageUsers / canAssignRoles", () => {
