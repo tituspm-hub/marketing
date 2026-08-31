@@ -2,7 +2,12 @@ node_modules
 dist
 .env.local
 .env*.local
+# Admin SDK credentials. Firebase's console downloads these as
+# <project>-firebase-adminsdk-<hash>.json, which the old pattern did not match.
 *serviceAccount*.json
+*-adminsdk-*.json
+*firebase-adminsdk*.json
+serviceAccount.json
 .firebase/
 firebase-debug.log
 firestore-debug.log
