@@ -58,8 +58,10 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center bg-surface px-4">
-      <div className="w-full max-w-sm bg-white rounded-card shadow-card p-8">
+    <div className="min-h-screen grid place-items-center bg-surface px-4 py-10">
+      <div className="w-full max-w-sm">
+        <img src="/logo.png" alt="Hire3x" className="h-9 w-auto mx-auto mb-6" />
+        <div className="bg-white rounded-card shadow-card p-8">
         <h1 className="text-2xl font-extrabold mb-1">
           {forced ? "Set your own password" : "Change password"}
         </h1>
@@ -77,7 +79,14 @@ export default function ChangePasswordPage() {
           <Field id="confirm" label="New password again" value={confirm} onChange={setConfirm}
                  autoComplete="new-password" />
 
-          {error && <p role="alert" className="text-danger text-sm mb-4">{error}</p>}
+          <Requirements value={next} confirm={confirm} />
+
+          {error && (
+            <p role="alert" className="text-danger text-sm mb-4 flex gap-2">
+              <span aria-hidden="true">⚠</span>
+              <span>{error}</span>
+            </p>
+          )}
 
           <button type="submit" disabled={busy}
                   className="w-full rounded-full bg-primary text-white font-semibold hover:bg-primary-hover disabled:opacity-60">
@@ -90,6 +99,7 @@ export default function ChangePasswordPage() {
             Sign out instead
           </button>
         )}
+        </div>
       </div>
     </div>
   );
@@ -101,8 +111,28 @@ function Field({ id, label, value, onChange, autoComplete, hint }) {
       <label htmlFor={id} className="block text-sm font-semibold mb-1">{label}</label>
       <input id={id} type="password" autoComplete={autoComplete} value={value}
              onChange={(e) => onChange(e.target.value)}
-             className="w-full rounded-full border border-line px-4" />
+             className="w-full rounded-full border border-line px-4 outline-none focus:border-primary" />
       {hint && <p className="text-muted-foreground text-xs mt-1">{hint}</p>}
     </div>
+  );
+}
+
+// Shown live rather than only on submit, so nobody discovers the rules by failing.
+function Requirements({ value, confirm }) {
+  const rules = [
+    ["At least 10 characters", value.length >= 10],
+    ["Contains a letter", /[A-Za-z]/.test(value)],
+    ["Contains a number", /[0-9]/.test(value)],
+    ["Both entries match", value.length > 0 && value === confirm],
+  ];
+  return (
+    <ul className="mb-4 space-y-1" aria-live="polite">
+      {rules.map(([label, met]) => (
+        <li key={label} className={`text-xs flex gap-2 ${met ? "text-success" : "text-muted-foreground"}`}>
+          <span aria-hidden="true">{met ? "✓" : "○"}</span>
+          <span>{label}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

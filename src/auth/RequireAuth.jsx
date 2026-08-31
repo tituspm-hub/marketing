@@ -1,17 +1,12 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider.jsx";
+import FullScreenLoader from "../components/FullScreenLoader.jsx";
 
 export default function RequireAuth({ children, adminOnly = false }) {
   const { status, isAdmin } = useAuth();
   const location = useLocation();
 
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen grid place-items-center text-muted-foreground" role="status">
-        Loading…
-      </div>
-    );
-  }
+  if (status === "loading") return <FullScreenLoader />;
   if (status === "signedOut") {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
