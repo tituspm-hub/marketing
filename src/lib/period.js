@@ -66,11 +66,15 @@ export function isWithinPeriod(isoDate, start, end) {
 
 // Local-components ISO date, deliberately not `toISOString()`. `defaultDateFor`
 // answers "what day is it for the person typing right now", which is inherently
-// local — using the UTC date here would silently pick the wrong day after local
-// evening in any UTC-ahead zone (ruling R3; the same class of silent-default
-// defect as spec failure point #2). Contrast with `fmtDate` in format.js, which
-// formats a stored calendar date and stays UTC on purpose so it renders
-// identically for everyone; that asymmetry is intentional, not a bug.
+// local — using the UTC date here would silently pick the wrong day (ruling R3;
+// the same class of silent-default defect as spec failure point #2). The
+// divergence direction depends on the sign of the runner's UTC offset: in a
+// UTC-ahead zone (e.g. IST, UTC+5:30) the wrong day shows up in the early-morning
+// local hours, when UTC is still on the previous day; in a UTC-behind zone
+// (e.g. PDT, UTC-7) it shows up late at night local time, when UTC has already
+// rolled to the next day. Contrast with `fmtDate` in format.js, which formats a
+// stored calendar date and stays UTC on purpose so it renders identically for
+// everyone; that asymmetry is intentional, not a bug.
 function localISODate(d) {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");

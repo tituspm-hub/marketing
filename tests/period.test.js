@@ -84,12 +84,20 @@ describe("defaultDateFor", () => {
     const now = new Date(2028, 3, 2, 10, 0, 0); // 2 Apr 2028, local
     expect(defaultDateFor("2026-08", "2027-01", now)).toBe("2027-01-01");
   });
-  // Ruling R3: proves defaultDateFor reads the LOCAL calendar day, not the UTC one.
-  // Under the old `now.toISOString().slice(0, 10)` approach, 23:00 local in a
-  // UTC-ahead zone (e.g. IST, UTC+5:30) is already the next UTC day, so the old
-  // logic would silently report the wrong date late in the evening — exactly the
-  // class of defect spec failure point #2 exists to eliminate.
-  it("returns the local calendar day even late in the evening in a UTC-ahead zone", () => {
+  // Ruling R3 (fix round 1): these two fixtures exist because a UTC-vs-local
+  // calendar-day mismatch shows up at opposite ends of the day depending on the
+  // sign of the runner's UTC offset:
+  //   UTC-ahead  (e.g. IST, UTC+5:30): local 02:00 is still the PREVIOUS day in UTC.
+  //   UTC-behind (e.g. PDT, UTC-7):    local 23:00 is already the NEXT day in UTC.
+  // Together they fail against a toISOString()-based implementation in either
+  // hemisphere of the offset range; either one alone passes vacuously in half of
+  // them. (The original single late-evening fixture only ever caught UTC-behind
+  // zones and was directionally wrong for the IST example it cited — corrected here.)
+  it("returns the local calendar day in the early morning (catches UTC-ahead zones)", () => {
+    const now = new Date(2026, 8, 15, 2, 0, 0); // 02:00 local, 15 Sep 2026
+    expect(defaultDateFor("2026-08", "2027-01", now)).toBe("2026-09-15");
+  });
+  it("returns the local calendar day late at night (catches UTC-behind zones)", () => {
     const now = new Date(2026, 8, 15, 23, 0, 0); // 23:00 local, 15 Sep 2026
     expect(defaultDateFor("2026-08", "2027-01", now)).toBe("2026-09-15");
   });
