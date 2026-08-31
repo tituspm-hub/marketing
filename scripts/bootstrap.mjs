@@ -36,6 +36,15 @@ const DEFAULT_CATEGORIES = [
 // password is not repair, so it takes an explicit flag.
 const resetPasswords = process.argv.includes("--reset-passwords");
 
+// --password=<value> gives all three the same starting password instead of a random
+// one each. Only safe because mustChangePassword forces a replacement at first sign-in.
+const fixedPassword = process.argv
+  .find((a) => a.startsWith("--password="))
+  ?.slice("--password=".length);
+if (fixedPassword !== undefined && fixedPassword.length < 6) {
+  throw new Error("--password needs at least 6 characters; Firebase rejects anything shorter.");
+}
+
 // Against the emulator the SDK needs only a project id; the host env vars do the rest.
 const onEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 initializeApp(
@@ -54,7 +63,7 @@ for (const person of SUPER_ADMINS) {
   if (!check.ok) throw new Error(`${person.username}: ${check.reason}`);
 
   const email = toAuthEmail(person.username);
-  let tempPassword = generateTempPassword();
+  let tempPassword = fixedPassword ?? generateTempPassword();
   let isNew = true;
 
   try {
@@ -65,8 +74,19 @@ for (const person of SUPER_ADMINS) {
       displayName: person.displayName,
     });
   } catch (err) {
+    if (err.code === "auth/configuration-not-found") {
+      // The raw error carries the request, including a live OAuth bearer token, so it
+      // must never reach the terminal. Say what to fix instead.
+      console.error(
+        "\nFirebase Authentication is not enabled on this project.\n" +
+          "Enable it first: Firebase console > Build > Authentication > Get started,\n" +
+          "choose Email/Password, and turn on the first toggle only.\n"
+      );
+      process.exit(1);
+    }
     if (err.code !== "auth/uid-already-exists" && err.code !== "auth/email-already-exists") {
-      throw err;
+      console.error(`\nBootstrap failed for @${person.username}: ${err.code ?? err.message}\n`);
+      process.exit(1);
     }
     isNew = false;
     if (resetPasswords) {
@@ -121,6 +141,10 @@ console.log("\n=== Super-admin accounts ===");
 for (const r of results) {
   const secret = r.tempPassword ? `temp password: ${r.tempPassword}` : "password unchanged";
   console.log(`  @${r.username.padEnd(8)} uid=${r.uid.padEnd(10)} ${secret}`);
+}
+if (fixedPassword !== undefined) {
+  console.log("\nAll three share one starting password. It is a placeholder, not a secret:");
+  console.log("each account is flagged to force a replacement before anything else loads.");
 }
 console.log("\nNew accounts must change their password on first sign-in.");
 console.log("Re-run with --reset-passwords to issue fresh temporary passwords.\n");
