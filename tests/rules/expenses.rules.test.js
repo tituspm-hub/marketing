@@ -79,3 +79,28 @@ describe("signed-out access", () => {
     await assertFails(setDoc(doc(anon, "audit/x"), { by: "nobody" }));
   });
 });
+
+describe("month must be a real month key, not a pattern", () => {
+  // month is interpolated into the regex that validates date, so metacharacters used to
+  // satisfy that check; character classes also sort above digits, carrying them past
+  // inPeriod's string comparison. A malformed month corrupts every per-month total.
+  it("refuses a character class that would match two real months", async () => {
+    await assertFails(setDoc(doc(as(env, MEMBER, "member"), "expenses/e_cls"),
+      validExpense(MEMBER, { month: "2026-0[89]", date: "2026-09-14" })));
+  });
+
+  it("refuses a wildcard month", async () => {
+    await assertFails(setDoc(doc(as(env, MEMBER, "member"), "expenses/e_dot"),
+      validExpense(MEMBER, { month: ".*", date: "2026-09-14" })));
+  });
+
+  it("refuses an anchor-stripping month", async () => {
+    await assertFails(setDoc(doc(as(env, MEMBER, "member"), "expenses/e_alt"),
+      validExpense(MEMBER, { month: "2026-09|2030-01", date: "2026-09-14" })));
+  });
+
+  it("still accepts an ordinary month", async () => {
+    await assertSucceeds(setDoc(doc(as(env, MEMBER, "member"), "expenses/e_ok"),
+      validExpense(MEMBER, { month: "2026-09", date: "2026-09-14" })));
+  });
+});

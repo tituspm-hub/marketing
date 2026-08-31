@@ -51,3 +51,10 @@ export async function writeAudit(entry: {
 }) {
   await adminDb().collection("audit").add({ ...entry, at: FieldValue.serverTimestamp() });
 }
+
+// tokensValidAfterTime is optional in the Admin SDK types and Firestore rejects
+// undefined, so fall back to now — the same instant the password was just set.
+export async function passwordStamp(uid: string): Promise<string> {
+  const user = await adminAuth().getUser(uid);
+  return user.tokensValidAfterTime ?? new Date().toISOString();
+}

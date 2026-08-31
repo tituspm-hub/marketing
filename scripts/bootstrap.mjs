@@ -94,6 +94,11 @@ for (const person of SUPER_ADMINS) {
     profile.createdBy = "bootstrap";
     profile.lastLoginAt = null;
   }
+  // Baseline for clear-must-change: the flag only comes down once this moves.
+  if (isNew || resetPasswords) {
+    profile.passwordSetAt =
+      (await auth.getUser(person.uid)).tokensValidAfterTime ?? new Date().toISOString();
+  }
   await db.doc(`users/${person.uid}`).set(profile, { merge: true });
 
   results.push({ ...person, tempPassword });

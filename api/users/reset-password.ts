@@ -1,6 +1,6 @@
 import { adminAuth, adminDb } from "../_lib/admin";
 import { handle, HttpError, requireString } from "../_lib/http";
-import { requireCaller, requireTarget, writeAudit } from "../_lib/guard";
+import { requireCaller, requireTarget, writeAudit, passwordStamp } from "../_lib/guard";
 import { validatePassword } from "../../src/lib/password.js";
 import { canManageUsers } from "../../src/shared/roles.js";
 
@@ -23,6 +23,9 @@ export default handle(async (req) => {
   await adminAuth().updateUser(targetUid, { password: tempPassword });
   // Force every existing session of that account to re-authenticate.
   await adminAuth().revokeRefreshTokens(targetUid);
+
+  const passwordSetAt = await passwordStamp(targetUid);
+  await adminDb().doc(`users/${targetUid}`).update({ passwordSetAt });
 
   await writeAudit({
     by: caller.uid, byUsername: caller.username,

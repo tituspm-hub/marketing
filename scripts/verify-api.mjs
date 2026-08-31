@@ -17,7 +17,7 @@ registerHooks({
 });
 
 const { initializeApp } = await import("firebase/app");
-const { getAuth, connectAuthEmulator, signInWithEmailAndPassword } = await import("firebase/auth");
+const { getAuth, connectAuthEmulator, signInWithEmailAndPassword, updatePassword } = await import("firebase/auth");
 const { toAuthEmail } = await import("../src/lib/username.js");
 const { generateTempPassword } = await import("../src/lib/password.js");
 const { adminAuth, adminDb } = await import("../api/_lib/admin.ts");
@@ -220,10 +220,45 @@ await expect("a password reset re-raises the change prompt", async () => {
 });
 
 console.log("\n--- clear-must-change ---");
+await expect("the flag will NOT come down without an actual password change", async () => {
+  // The whole point of the gate: holding a valid token is not evidence that the
+  // temporary password the admin typed has been replaced.
+  const pw = generateTempPassword();
+  const r0 = await call(routes.create, gebinToken, {
+    username: "qagate", displayName: "QA Gate", tempPassword: pw, role: "member",
+  });
+  eq(r0.statusCode, 200, "create status");
+  const token = await tokenFor("qagate", pw);
+  const r = await call(routes.clearMustChange, token, {});
+  eq(r.statusCode, 403, "status");
+  eq((await adminDb().doc(`users/${r0.body.uid}`).get()).data().mustChangePassword, true, "flag");
+});
+
+await expect("the flag comes down once the teammate really changes it", async () => {
+  const pw = generateTempPassword();
+  const r0 = await call(routes.create, gebinToken, {
+    username: "qagate2", displayName: "QA Gate Two", tempPassword: pw, role: "member",
+  });
+  const cred = await signInWithEmailAndPassword(clientAuth, toAuthEmail("qagate2"), pw);
+  await new Promise((r) => setTimeout(r, 1200));
+  const replacement = generateTempPassword();
+  await updatePassword(cred.user, replacement);
+  // Mirrors ChangePasswordPage: without this re-auth the token's auth_time predates
+  // tokensValidAfterTime and requireCaller's checkRevoked rejects it with a 401.
+  const fresh = await signInWithEmailAndPassword(clientAuth, toAuthEmail("qagate2"), replacement);
+  const token = await fresh.user.getIdToken(true);
+  const r = await call(routes.clearMustChange, token, {});
+  eq(r.statusCode, 200, "status");
+  eq((await adminDb().doc(`users/${r0.body.uid}`).get()).data().mustChangePassword, false, "flag");
+});
+
 await expect("the caller clears their own prompt", async () => {
   // Set the precondition here rather than relying on bootstrap state, which an
   // earlier run of this harness has already consumed.
-  await adminDb().doc(`users/${callerUid}`).update({ mustChangePassword: true });
+  await adminDb().doc(`users/${callerUid}`).update({
+    mustChangePassword: true,
+    passwordSetAt: new Date(Date.now() - 60_000).toISOString(),
+  });
   const r = await call(routes.clearMustChange, gebinToken, {});
   eq(r.statusCode, 200, "status");
   eq((await adminDb().doc(`users/${callerUid}`).get()).data().mustChangePassword, false, "cleared");

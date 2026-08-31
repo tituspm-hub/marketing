@@ -1,7 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { adminAuth, adminDb } from "../_lib/admin";
 import { handle, HttpError, requireString } from "../_lib/http";
-import { requireCaller, writeAudit } from "../_lib/guard";
+import { requireCaller, writeAudit, passwordStamp } from "../_lib/guard";
 import { validateUsername, toAuthEmail } from "../../src/lib/username.js";
 import { validatePassword } from "../../src/lib/password.js";
 import { canManageUsers, canAssignRoles } from "../../src/shared/roles.js";
@@ -50,11 +50,17 @@ export default handle(async (req) => {
   try {
     await adminAuth().setCustomUserClaims(created.uid, { role });
 
+    // The Auth stamp at the moment the admin set this password. clear-must-change
+    // refuses to lower the flag until it has moved, which only the account holder
+    // changing their own password can do.
+    const passwordSetAt = await passwordStamp(created.uid);
+
     await adminDb().doc(`users/${created.uid}`).set({
       username,
       displayName,
       role,
       mustChangePassword: true,
+      passwordSetAt,
       disabled: false,
       createdAt: FieldValue.serverTimestamp(),
       createdBy: caller.uid,

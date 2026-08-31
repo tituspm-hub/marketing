@@ -32,6 +32,35 @@ describe("/users is unwritable from every client", () => {
   });
 });
 
+describe("a demoted admin loses access immediately, not when the token expires", () => {
+  const budgetDoc = (uid) => ({ amount: 100000, updatedBy: uid, updatedAt: new Date() });
+  // set-role revokes refresh tokens, but an ID token already in the browser keeps its
+  // claims for up to an hour and rules never consult the revocation list. Roles must
+  // therefore come from the profile document, which the backend updates at once.
+  it("refuses a budget write once the profile says member, despite an admin claim", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `users/${ADMIN}`), { role: "member" });
+    });
+    await assertFails(setDoc(doc(as(env, ADMIN, "admin"), "budgets/2026-09"), budgetDoc(ADMIN)));
+  });
+
+  it("refuses a settings write on the same stale claim", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `users/${ADMIN}`), { role: "member" });
+    });
+    await assertFails(
+      updateDoc(doc(as(env, ADMIN, "admin"), "settings/app"), { periodEnd: "2030-01" }));
+  });
+
+  it("grants a promoted member access on the profile alone, with no claim at all", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `users/${MEMBER}`), { role: "admin" });
+    });
+    await assertSucceeds(
+      setDoc(doc(as(env, MEMBER, undefined), "budgets/2026-09"), budgetDoc(MEMBER)));
+  });
+});
+
 describe("a forged role claim does not grant super-admin", () => {
   it("rejects a member who mints themselves a superadmin claim", async () => {
     // A real client cannot set this claim; the test proves the UID list is what counts.

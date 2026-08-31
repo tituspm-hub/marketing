@@ -42,6 +42,12 @@ export default function ChangePasswordPage() {
         user, EmailAuthProvider.credential(user.email, current)
       );
       await updatePassword(user, next);
+      // Changing the password moves tokensValidAfterTime past this session's auth_time,
+      // so requireCaller's checkRevoked would reject the very next API call. Re-auth
+      // with the new password mints a token the backend will accept.
+      await reauthenticateWithCredential(
+        user, EmailAuthProvider.credential(user.email, next)
+      );
       await callApi("users/clear-must-change");
       navigate("/", { replace: true });
     } catch (err) {
