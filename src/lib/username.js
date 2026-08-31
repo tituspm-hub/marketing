@@ -3,6 +3,10 @@ export const USERNAME_DOMAIN = "team.hire3x.com";
 const PATTERN = /^[a-z][a-z0-9._-]{2,19}$/;
 const RESERVED = new Set(["admin", "root", "system", "support", "api", "null", "firebase"]);
 
+/**
+ * @param {unknown} input
+ * @returns {{ ok: true } | { ok: false, reason: string }}
+ */
 export function validateUsername(input) {
   if (typeof input !== "string") return { ok: false, reason: "Enter a username." };
   const value = input.trim();
