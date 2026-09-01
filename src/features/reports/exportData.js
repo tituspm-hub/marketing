@@ -131,3 +131,16 @@ export function reportHtml({ label, expenses, budget, spent, byCategory, months,
 <th class="num">Difference</th></tr></thead><tbody>${overview}</tbody></table>
 </body></html>`;
 }
+
+// The browser's own print dialog is the PDF exporter: no library to ship, and the
+// person keeps their own paper size, margins and destination.
+export function printHtml(html) {
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  document.body.appendChild(frame);
+  frame.contentDocument.write(html);
+  frame.contentDocument.close();
+  frame.contentWindow.focus();
+  frame.contentWindow.print();
+  setTimeout(() => frame.remove(), 1000);
+}

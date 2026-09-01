@@ -8,6 +8,7 @@ import LoginPage from "./auth/LoginPage.jsx";
 import ChangePasswordPage from "./auth/ChangePasswordPage.jsx";
 import AppShell from "./components/AppShell.jsx";
 import DashboardPage from "./features/dashboard/DashboardPage.jsx";
+import LedgerPage from "./features/ledger/LedgerPage.jsx";
 import TeamPage from "./features/admin/TeamPage.jsx";
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
           />
           <Route element={<RequireAuth><AppShell /></RequireAuth>}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/ledger" element={<LedgerPage />} />
           </Route>
           <Route
             path="/team"
