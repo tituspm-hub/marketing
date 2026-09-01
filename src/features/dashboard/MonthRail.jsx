@@ -8,7 +8,7 @@ export default function MonthRail({ months, active, onSelect, totals, budgets })
     <div
       role="tablist"
       aria-label="Month"
-      className="grid grid-cols-3 sm:grid-cols-6 gap-2 p-2 rounded-card bg-white shadow-card"
+      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 p-2 rounded-card bg-white shadow-card"
     >
       {months.map((m) => {
         const spent = totals[m.key] ?? 0;
@@ -24,10 +24,12 @@ export default function MonthRail({ months, active, onSelect, totals, budgets })
             aria-selected={isActive}
             data-compact
             onClick={() => onSelect(m.key)}
-            className={`group text-left px-3 py-2.5 rounded-xl transition-all ${
+            // Inactive segments carry a hairline of their own: without it the six run
+            // together and there is no telling where one month ends and the next starts.
+            className={`group text-left px-3 py-2.5 rounded-xl border transition-all ${
               isActive
-                ? "bg-primary text-white shadow-lift"
-                : "hover:bg-muted"
+                ? "bg-primary border-primary text-white shadow-lift"
+                : "border-line bg-white hover:border-primary/40 hover:bg-accent/40"
             }`}
           >
             <div className={`text-[10px] font-bold tracking-[0.12em] ${
