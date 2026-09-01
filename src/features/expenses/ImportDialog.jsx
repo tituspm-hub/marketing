@@ -7,14 +7,15 @@ import { parseCsv, toCsv, download } from "../reports/exportData.js";
 import { parseAmount, MAX_AMOUNT, inr } from "../../lib/format.js";
 import { monthKey, isWithinPeriod } from "../../lib/period.js";
 
-export default function ImportDialog({ open, onClose, settings, uid }) {
+export default function ImportDialog({ open, onClose, settings, categories, uid }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   if (!open) return null;
 
-  const known = new Set(settings.categories.map((c) => c.label ?? c));
+  // The merged list, so a category somebody added themselves imports like any other.
+  const known = new Set(categories.map((c) => c.label ?? c));
 
   function reset() { setPreview(null); setError(""); onClose(); }
 
@@ -94,7 +95,7 @@ export default function ImportDialog({ open, onClose, settings, uid }) {
 
         <button onClick={() => download("expense-template.csv",
                   toCsv([{ date: `${settings.periodStart}-01`, month: settings.periodStart,
-                           category: settings.categories[0]?.label ?? "Other",
+                           category: categories[0]?.label ?? "Other",
                            description: "Example line — replace this", amount: 25000,
                            invoice: "", notes: "" }]))}
                 className="inline-flex items-center gap-2 text-sm font-semibold text-primary mb-4">
