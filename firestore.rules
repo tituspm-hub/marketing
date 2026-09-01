@@ -89,6 +89,25 @@ service cloud.firestore {
         && inPeriod(monthKey);
     }
 
+    // Anyone who can log an expense may name one. A member who cannot add a category
+    // types the real one into the description instead, which is worse for everybody.
+    // Renames are denied outright: the label is copied onto every expense filed under
+    // it, so a rename would silently disagree with history.
+    match /categories/{categoryId} {
+      allow read: if signedIn() && isActive();
+      allow create: if signedIn() && isActive()
+        && request.resource.data.keys().hasOnly(['label','createdBy','createdAt'])
+        && request.resource.data.keys().hasAll(['label','createdBy','createdAt'])
+        && request.resource.data.label is string
+        && request.resource.data.label.size() > 0
+        && request.resource.data.label.size() <= 60
+        && request.resource.data.createdBy == uid()
+        && request.resource.data.createdAt == request.time
+        && categoryId.size() <= 60;
+      allow update: if false;
+      allow delete: if isAdmin() && isActive();
+    }
+
     match /audit/{entryId} {
       allow read:   if signedIn();
       allow create: if signedIn() && isActive()
