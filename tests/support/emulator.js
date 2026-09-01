@@ -3,6 +3,10 @@
 // them fail for reasons that had nothing to do with the code under test.
 export const TEST_PASSWORD = "Emulator-test-1";
 
+// What bootstrap.mjs hands the team on a local run. A suite that borrows an account
+// puts it back to this, so running the tests never silently changes who can sign in.
+export const DEV_PASSWORD = "asdfghjkl;'";
+
 export async function emulatorReachable() {
   try {
     return (await fetch("http://127.0.0.1:9099", { signal: AbortSignal.timeout(2000) })).ok;
@@ -31,4 +35,13 @@ export async function seedOwner({ uid = "sa_gebin", mustChangePassword }) {
   const stamp = (await auth.getUser(uid)).tokensValidAfterTime ?? new Date().toISOString();
   await db.doc(`users/${uid}`).set({ mustChangePassword, passwordSetAt: stamp }, { merge: true });
   return { auth, db };
+}
+
+// Hands the account back in the state bootstrap leaves it: the shared starting
+// password, and flagged to force a replacement at the next sign-in.
+export async function restoreAccount(uid) {
+  const { auth, db } = await adminApp();
+  await auth.updateUser(uid, { password: DEV_PASSWORD });
+  const stamp = (await auth.getUser(uid)).tokensValidAfterTime ?? new Date().toISOString();
+  await db.doc(`users/${uid}`).set({ mustChangePassword: true, passwordSetAt: stamp }, { merge: true });
 }

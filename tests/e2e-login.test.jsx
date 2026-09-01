@@ -1,11 +1,11 @@
 // Drives the whole application against the real Auth and Firestore emulators. Nothing
 // is mocked. The earlier version asserted only that Firebase authenticated, which it
 // always did — the app still never left the sign-in screen. Assert what the user sees.
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { emulatorReachable, seedOwner, TEST_PASSWORD } from "./support/emulator.js";
+import { emulatorReachable, seedOwner, restoreAccount, TEST_PASSWORD } from "./support/emulator.js";
 const maybe = (await emulatorReachable()) ? describe : describe.skip;
 
 maybe("the sign-in journey a person actually walks", () => {
@@ -20,6 +20,8 @@ maybe("the sign-in journey a person actually walks", () => {
   });
 
   afterEach(async () => { cleanup(); await signOut(auth).catch(() => {}); });
+  // Borrowing the account must not leave it signed in with a test password.
+  afterAll(async () => { await restoreAccount("sa_titus").catch(() => {}); });
 
   async function signIn(username, password) {
     render(<App />);

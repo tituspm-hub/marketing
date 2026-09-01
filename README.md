@@ -93,8 +93,16 @@ so it is safe to re-run.
 - **Roles** — `superadmin`, `admin`, `member`. The three super-admins are fixed UIDs
   listed in `src/shared/roles.js` and mirrored in `firestore.rules`; a test fails if the
   two lists drift. The list cannot be extended at runtime.
+- **Screens** — `/` is the overview: the month rail, the three figures, and the expense
+  form at full width. `/ledger` is every expense in the month, with search, category
+  filters and sorting. Both read one month, held in the `?m=` query string so switching
+  screens keeps it and a link to a particular month can be sent to somebody else.
 - **Data** — one Firestore document per expense, so concurrent edits never clobber
   each other.
+- **Categories** — the curated list lives on `/settings/app` and is admin-only. Anyone
+  may add their own through the form's **Other** chip; those land in `/categories` under
+  an id derived from the label, so the same name typed twice is one category. Renames
+  are denied in the rules: the label is copied onto every expense filed under it.
 - **Privileged writes** — no client may write `/users`. Creating, promoting, disabling
   and password-resetting all run in Vercel Serverless Functions under the Admin SDK.
 - **Hosting** — Vercel. Firebase stays on the free Spark plan (Auth and Firestore only).
